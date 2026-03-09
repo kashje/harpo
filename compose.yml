@@ -1,0 +1,5 @@
+services:
+  app:
+    image: ${IMAGES_PREFIX:-}app-web
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
