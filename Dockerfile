@@ -15,10 +15,6 @@ RUN npm install -g corepack@latest && \
 # Disable telemetry on the following line, remove it if you want to enable telemetry.
 ENV NEXT_TELEMETRY_DISABLED 1
 
-COPY --link --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint
-
-ENTRYPOINT ["docker-entrypoint"]
-
 # Dev image
 FROM base AS dev
 
