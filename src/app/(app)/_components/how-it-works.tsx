@@ -1,0 +1,95 @@
+"use client";
+
+import { FileText, Share2, Trash2, ArrowRight } from "lucide-react";
+
+const steps = [
+  {
+    number: "01",
+    icon: FileText,
+    title: "Encrypt",
+    subtitle: "In your browser",
+    description:
+      "Your data is encrypted locally using AES-256-GCM with a cryptographically secure random key. Only ciphertext ever leaves your device.",
+    color: "from-emerald-500 to-teal-600",
+  },
+  {
+    number: "02",
+    icon: Share2,
+    title: "Share",
+    subtitle: "Send the link",
+    description:
+      "Share the generated link. The decryption key lives in the URL fragment and never touches our servers.",
+    color: "from-teal-500 to-cyan-600",
+  },
+  {
+    number: "03",
+    icon: Trash2,
+    title: "Destroy",
+    subtitle: "Auto-purge",
+    description:
+      "Once viewed or expired, your secret is permanently deleted from our edge storage. Zero traces remain.",
+    color: "from-cyan-500 to-blue-600",
+  },
+];
+
+export function HowItWorks() {
+  return (
+    <section className="relative py-24">
+      {/* Background accent */}
+      <div className="via-secondary/30 pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent to-transparent" />
+
+      <div className="relative">
+        <div className="mb-16 text-center">
+          <span className="text-primary bg-primary/10 mb-3 inline-block rounded-full px-3 py-1 text-xs font-semibold tracking-[0.2em] uppercase">
+            How it works
+          </span>
+          <h2 className="text-foreground mt-3 text-3xl font-bold text-balance md:text-4xl lg:text-5xl">
+            Three steps to secure sharing
+          </h2>
+          <p className="text-muted-foreground mx-auto mt-4 max-w-xl text-pretty">
+            End-to-end encryption without the complexity. Your secrets stay
+            yours.
+          </p>
+        </div>
+
+        <div className="mx-auto grid max-w-5xl gap-6 md:grid-cols-3">
+          {steps.map((step, index) => (
+            <div key={step.number} className="group relative">
+              {/* Connector arrow */}
+              {index < steps.length - 1 && (
+                <div className="text-muted-foreground/30 absolute top-12 -right-3 z-10 hidden h-6 w-6 items-center justify-center md:flex">
+                  <ArrowRight className="h-5 w-5" />
+                </div>
+              )}
+
+              <div className="bg-card/50 border-border/50 hover:bg-card/80 hover:border-primary/20 group-hover:shadow-primary/5 h-full rounded-2xl border p-6 backdrop-blur-sm transition-all duration-300 group-hover:shadow-xl">
+                {/* Icon */}
+                <div className="relative mb-5">
+                  <div
+                    className={`h-14 w-14 rounded-xl bg-gradient-to-br ${step.color} flex items-center justify-center shadow-lg`}
+                  >
+                    <step.icon className="h-6 w-6 text-white" />
+                  </div>
+                  <span className="text-primary bg-background border-border absolute -top-2 -left-2 rounded-md border px-1.5 py-0.5 text-[10px] font-bold">
+                    {step.number}
+                  </span>
+                </div>
+
+                {/* Content */}
+                <h3 className="text-foreground mb-1 text-xl font-bold">
+                  {step.title}
+                </h3>
+                <p className="text-primary mb-3 text-xs font-medium tracking-wide uppercase">
+                  {step.subtitle}
+                </p>
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  {step.description}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
