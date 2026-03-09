@@ -1,6 +1,7 @@
 "use client";
 
-import { Lock } from "lucide-react";
+import { Github, Logo } from "@/components/icons";
+import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -25,11 +26,11 @@ export function Header() {
     >
       <div className="container mx-auto flex items-center justify-between px-4 py-4">
         <Link href="/" className="group flex items-center gap-2.5">
-          <div className="from-primary to-primary/60 shadow-primary/20 group-hover:shadow-primary/40 relative flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br shadow-lg transition-shadow">
-            <Lock className="text-primary-foreground h-4 w-4" />
-            <div className="bg-primary/20 absolute inset-0 -z-10 rounded-xl blur-md" />
+          <div className="group-hover:shadow-primary/40 relative flex h-6 w-6 items-center justify-center rounded-xl bg-gradient-to-br transition-shadow">
+            <Logo className="text-primary size-6" />
+            <div className="group-hover:bg-primary/20 absolute inset-0 -z-10 transition-all group-hover:blur-md" />
           </div>
-          <span className="text-foreground text-xl font-bold tracking-tight">
+          <span className="text-foreground text-base font-bold tracking-tight">
             Harpo
           </span>
         </Link>
@@ -46,13 +47,11 @@ export function Header() {
           >
             Security
           </Link>
-          <Link
-            href="https://github.com"
-            target="_blank"
-            className="text-primary-foreground bg-primary hover:bg-primary/90 ml-2 rounded-lg px-4 py-2 text-sm font-medium transition-all"
-          >
-            GitHub
-          </Link>
+          <Button size="icon" variant="link" asChild>
+            <Link href="https://github.com" target="_blank">
+              <Github className="size-5" />
+            </Link>
+          </Button>
         </nav>
       </div>
     </header>

@@ -45,14 +45,14 @@ const features = [
 export function Features() {
   return (
     <section className="relative py-24">
-      <div className="mb-16 text-center">
-        <span className="text-primary bg-primary/10 mb-3 inline-block rounded-full px-3 py-1 text-xs font-semibold tracking-[0.2em] uppercase">
+      <div className="mb-8 text-center">
+        <span className="text-primary bg-primary/10 mb-3 inline-block px-3 py-1 text-xs font-semibold tracking-[0.2em] uppercase">
           Security
         </span>
-        <h2 className="text-foreground mt-3 text-3xl font-bold text-balance md:text-4xl lg:text-5xl">
+        <h2 className="text-foreground text-2xl font-bold text-balance">
           Built for paranoid security
         </h2>
-        <p className="text-muted-foreground mx-auto mt-4 max-w-xl text-pretty">
+        <p className="text-muted-foreground mx-auto max-w-xl text-pretty">
           Enterprise-grade encryption with zero trust architecture. Your secrets
           are mathematically protected.
         </p>
@@ -62,11 +62,7 @@ export function Features() {
         {features.map((feature, index) => (
           <div
             key={feature.title}
-            className={`group relative rounded-2xl border p-6 transition-all duration-300 hover:shadow-xl ${
-              feature.highlight
-                ? "from-primary/10 to-primary/5 border-primary/30 hover:border-primary/50 bg-gradient-to-br"
-                : "bg-card/50 border-border/50 hover:bg-card/80 hover:border-primary/20"
-            }`}
+            className="group bg-card/50 border-border/50 hover:border-primary/50 relative rounded-2xl border bg-gradient-to-br p-6 transition-all duration-300 hover:shadow-xl"
             style={{
               animationDelay: `${index * 50}ms`,
             }}
@@ -75,16 +71,8 @@ export function Features() {
             <div className="from-primary/5 pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
 
             <div className="relative">
-              <div
-                className={`mb-4 flex h-11 w-11 items-center justify-center rounded-xl transition-transform group-hover:scale-110 ${
-                  feature.highlight ? "bg-primary/20" : "bg-secondary/80"
-                }`}
-              >
-                <feature.icon
-                  className={`h-5 w-5 ${
-                    feature.highlight ? "text-primary" : "text-primary"
-                  }`}
-                />
+              <div className="bg-secondary/80 group-hover:bg-primary/20 mb-4 flex h-11 w-11 items-center justify-center rounded-xl transition-transform group-hover:scale-110">
+                <feature.icon className="text-primary h-5 w-5" />
               </div>
               <h3 className="text-foreground mb-2 text-lg font-semibold">
                 {feature.title}

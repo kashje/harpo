@@ -1,4 +1,4 @@
-import { Lock, Github } from "lucide-react";
+import { Github, Logo } from "@/components/icons";
 import Link from "next/link";
 
 export function Footer() {
@@ -7,8 +7,8 @@ export function Footer() {
       <div className="container mx-auto px-4">
         <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
           <div className="flex items-center gap-3">
-            <div className="from-primary to-primary/60 flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br">
-              <Lock className="text-primary-foreground h-3.5 w-3.5" />
+            <div className="flex h-8 w-8 items-center justify-center">
+              <Logo className="text-primary h-6 w-6" />
             </div>
             <div>
               <span className="text-foreground text-sm font-bold">Harpo</span>

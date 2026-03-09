@@ -31,12 +31,12 @@ export function TrustBadges() {
       {badges.map((badge, index) => (
         <div
           key={badge.label}
-          className="group bg-secondary/30 border-border/50 hover:bg-secondary/50 hover:border-primary/30 relative flex cursor-default items-center gap-2.5 rounded-full border px-4 py-2.5 backdrop-blur-sm transition-all duration-300"
+          className="group bg-secondary/30 border-border/50 hover:bg-secondary/50 hover:border-primary/30 relative flex cursor-default items-center gap-3 border px-3 py-2.5 backdrop-blur-sm transition-all duration-300"
           style={{
             animationDelay: `${index * 100}ms`,
           }}
         >
-          <div className="bg-primary/10 group-hover:bg-primary/20 flex h-8 w-8 items-center justify-center rounded-full transition-colors">
+          <div className="bg-primary/10 group-hover:bg-primary/20 flex h-8 w-8 items-center justify-center transition-colors">
             <badge.icon className="text-primary h-4 w-4" />
           </div>
           <div className="flex flex-col">

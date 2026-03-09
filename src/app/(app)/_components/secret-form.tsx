@@ -268,7 +268,7 @@ export function SecretForm() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">1 view (burn after reading)</SelectItem>
+                  <SelectItem value="1">1 view</SelectItem>
                   <SelectItem value="3">3 views</SelectItem>
                   <SelectItem value="5">5 views</SelectItem>
                   <SelectItem value="10">10 views</SelectItem>
