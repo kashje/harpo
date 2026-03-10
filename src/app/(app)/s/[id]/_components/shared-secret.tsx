@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Download, Eye, EyeOff, Copy, Check, FileText } from "lucide-react";
+import { Download, Eye, Copy, Check, FileText } from "lucide-react";
 
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import type { Secret } from "@/types";
 
 function fileExtensionFromType(fileType: string | null) {
   switch (fileType) {
@@ -68,10 +69,10 @@ async function downloadPayloadAsFile(opts: {
   }
 }
 
-export function SharedSecret(props: { id: string; initialName: string }) {
-  const { data, isLoading, error } = api.secret.get.useQuery(
-    { id: props.id },
-    { refetchOnWindowFocus: false },
+export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
+  const { data, isLoading, error, refetch } = api.secret.get.useQuery(
+    { id: secret.id },
+    { refetchOnWindowFocus: false, initialData: secret },
   );
 
   const consume = api.secret.consume.useMutation();
@@ -96,9 +97,10 @@ export function SharedSecret(props: { id: string; initialName: string }) {
   const handleReveal = useCallback(async () => {
     try {
       if (revealed) return;
-      const res = await consume.mutateAsync({ id: props.id });
+      const res = await consume.mutateAsync({ id: secret.id });
       if (!res.viewCount) return;
       setRevealed(true);
+      await refetch();
     } catch (err) {
       toast.error("Unable to reveal secret", {
         description:
@@ -107,16 +109,17 @@ export function SharedSecret(props: { id: string; initialName: string }) {
         closeButton: true,
       });
     }
-  }, [consume, props.id, revealed]);
+  }, [consume, secret.id, revealed, refetch]);
 
   const handleCopy = useCallback(async () => {
     try {
       if (!data?.encryptedPayload) return;
-      const res = await consume.mutateAsync({ id: props.id });
+      const res = await consume.mutateAsync({ id: secret.id });
       if (!res.viewCount) return;
       await navigator.clipboard.writeText(data.encryptedPayload);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
+      await refetch();
     } catch (err) {
       toast.error("Unable to copy secret", {
         description:
@@ -125,12 +128,12 @@ export function SharedSecret(props: { id: string; initialName: string }) {
         closeButton: true,
       });
     }
-  }, [consume, data?.encryptedPayload, props.id]);
+  }, [consume, data?.encryptedPayload, secret.id, refetch]);
 
   const handleDownload = useCallback(async () => {
     if (!data?.encryptedPayload) return;
     try {
-      const res = await consume.mutateAsync({ id: props.id });
+      const res = await consume.mutateAsync({ id: secret.id });
       if (!res.viewCount) {
         return;
       }
@@ -139,6 +142,7 @@ export function SharedSecret(props: { id: string; initialName: string }) {
         suggestedName: data.name,
         fileType: data.fileType ?? null,
       });
+      await refetch();
     } catch (err) {
       toast.error("Unable to download secret", {
         description:
@@ -147,7 +151,14 @@ export function SharedSecret(props: { id: string; initialName: string }) {
         closeButton: true,
       });
     }
-  }, [consume, data?.encryptedPayload, data?.fileType, data?.name, props.id]);
+  }, [
+    consume,
+    data?.encryptedPayload,
+    data?.fileType,
+    data?.name,
+    secret.id,
+    refetch,
+  ]);
 
   const showUnavailable = !isLoading && (error ? true : data == null);
 
@@ -155,12 +166,15 @@ export function SharedSecret(props: { id: string; initialName: string }) {
     <Card className="bg-card/60 border-border/50 backdrop-blur-xl">
       <CardHeader>
         <CardTitle className="text-foreground text-2xl font-bold text-balance">
-          {data?.name ?? props.initialName}
+          {data?.name ?? secret.name}
         </CardTitle>
         <CardDescription className="text-muted-foreground">
           {expiresLabel ? (
             <>
-              Expires <span className="font-medium">{expiresLabel}</span>
+              Expires{" "}
+              <span className="font-medium" suppressHydrationWarning>
+                {expiresLabel}
+              </span>
             </>
           ) : (
             "Securely shared secret"
