@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Eye, Copy, Check, FileText } from "lucide-react";
 
 import { api } from "@/trpc/react";
@@ -17,6 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Secret } from "@/types";
+import { env } from "@/env";
 
 function fileExtensionFromType(fileType: string | null) {
   switch (fileType) {
@@ -75,10 +76,19 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
     { refetchOnWindowFocus: false, initialData: secret },
   );
 
+  const tagDestruction = api.secret.tagDeletion.useMutation();
   const consume = api.secret.consume.useMutation();
 
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [destroyCountdown, setDestroyCountdown] = useState<number | null>(null);
+
+  const hasLimitedViews =
+    data?.maxViews !== undefined &&
+    data?.maxViews !== null &&
+    data.maxViews > 0;
+  const isLastView =
+    !!data && hasLimitedViews && data.viewCount + 1 >= data.maxViews;
 
   const expiresLabel = useMemo(() => {
     if (!data?.expiresAt) return null;
@@ -95,8 +105,38 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
   const isFile = !!data?.fileType;
 
   const handleReveal = useCallback(async () => {
+    if (revealed) return;
+
+    // On the very last allowed view, schedule destruction server-side and then
+    // start a client-side countdown so the user can read/copy before it goes
+    // away.
+    if (isLastView && !destroyCountdown) {
+      try {
+        await tagDestruction.mutateAsync({ id: secret.id });
+        const ttlSeconds = Number(
+          env.NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS ?? 30,
+        );
+        setRevealed(true);
+        setDestroyCountdown(ttlSeconds);
+        await refetch();
+      } catch (err) {
+        toast.error("Secrets", {
+          description:
+            (err as { message?: string }).message ??
+            "Reveal countdown not available",
+          position: "top-center",
+          closeButton: true,
+        });
+        const ttlSeconds = Math.ceil(
+          (data?.expiresAt.getTime() - new Date().getTime()) / 1000,
+        );
+        setRevealed(true);
+        setDestroyCountdown(ttlSeconds);
+      }
+      return;
+    }
+
     try {
-      if (revealed) return;
       const res = await consume.mutateAsync({ id: secret.id });
       if (!res.viewCount) return;
       setRevealed(true);
@@ -109,11 +149,30 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
         closeButton: true,
       });
     }
-  }, [consume, secret.id, revealed, refetch]);
+  }, [
+    tagDestruction,
+    consume,
+    secret.id,
+    data?.expiresAt,
+    revealed,
+    refetch,
+    isLastView,
+    destroyCountdown,
+  ]);
 
   const handleCopy = useCallback(async () => {
+    if (!data?.encryptedPayload) return;
+
+    // If we're already on the last-view countdown, just allow copying without
+    // consuming another view; the countdown will handle destruction.
+    if (destroyCountdown !== null && revealed) {
+      await navigator.clipboard.writeText(data.encryptedPayload);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+      return;
+    }
+
     try {
-      if (!data?.encryptedPayload) return;
       const res = await consume.mutateAsync({ id: secret.id });
       if (!res.viewCount) return;
       await navigator.clipboard.writeText(data.encryptedPayload);
@@ -128,15 +187,20 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
         closeButton: true,
       });
     }
-  }, [consume, data?.encryptedPayload, secret.id, refetch]);
+  }, [
+    consume,
+    data?.encryptedPayload,
+    secret.id,
+    refetch,
+    destroyCountdown,
+    revealed,
+  ]);
 
   const handleDownload = useCallback(async () => {
     if (!data?.encryptedPayload) return;
     try {
       const res = await consume.mutateAsync({ id: secret.id });
-      if (!res.viewCount) {
-        return;
-      }
+      if (!res.viewCount) return;
       await downloadPayloadAsFile({
         payload: data.encryptedPayload,
         suggestedName: data.name,
@@ -159,6 +223,26 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
     secret.id,
     refetch,
   ]);
+
+  useEffect(() => {
+    if (destroyCountdown === null) return;
+
+    if (destroyCountdown <= 0) {
+      // Countdown finished: the server-side expiry has already been armed, so
+      // just clear local state and refetch.
+      setDestroyCountdown(null);
+      void refetch();
+      return;
+    }
+
+    const id = window.setTimeout(() => {
+      setDestroyCountdown((current) =>
+        current === null ? null : Math.max(current - 1, 0),
+      );
+    }, 1000);
+
+    return () => window.clearTimeout(id);
+  }, [destroyCountdown, refetch]);
 
   const showUnavailable = !isLoading && (error ? true : data == null);
 
@@ -257,13 +341,20 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
               ) : (
                 <>
                   {revealed ? (
-                    <Textarea
-                      value={data.encryptedPayload}
-                      readOnly
-                      className={cn(
-                        "bg-input/50 border-border/50 min-h-[220px] resize-none font-mono text-sm",
+                    <div className="relative">
+                      <Textarea
+                        value={data.encryptedPayload}
+                        readOnly
+                        className={cn(
+                          "bg-input/50 border-border/50 min-h-[220px] resize-none pr-32 font-mono text-sm",
+                        )}
+                      />
+                      {destroyCountdown !== null && (
+                        <div className="text-muted-foreground pointer-events-none absolute right-3 bottom-2 text-xs">
+                          Secret will be destroyed in {destroyCountdown}s
+                        </div>
                       )}
-                    />
+                    </div>
                   ) : (
                     <Card className="relative min-h-[220px]">
                       {!isFile && (

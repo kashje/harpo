@@ -25,6 +25,7 @@ export const secrets = pgTable("secrets", {
   maxViews: integer("max_views").notNull().default(1),
   fileType: fileType("file_type"),
   passwordHash: text("password_hash"),
+  taggedDeletionAt: timestamp("taggedDeletionAt"),
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -4,6 +4,8 @@ import { eq } from "drizzle-orm";
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
 import { secrets } from "@/server/db/schemas/secrets";
 import { TRPCError } from "@trpc/server";
+import { env } from "@/env";
+import { validateSecret } from "../utils/secret";
 
 const GetSecretByIdSchema = z.object({
   id: z.string().uuid(),
@@ -22,6 +24,7 @@ export const secretRouter = createTRPCRouter({
           maxViews: secrets.maxViews,
           fileType: secrets.fileType,
           expiresAt: secrets.expiresAt,
+          taggedDeletionAt: secrets.taggedDeletionAt,
         })
         .from(secrets)
         .where(eq(secrets.id, input.id))
@@ -30,16 +33,60 @@ export const secretRouter = createTRPCRouter({
 
       if (!row) return null;
 
-      const now = Date.now();
-      const expiresAtMs = row.expiresAt.getTime();
-      const isExpired = expiresAtMs <= now;
-
-      const hasViewLimit = row.maxViews >= 1;
-      const isDepleted = hasViewLimit && row.viewCount >= row.maxViews;
-
-      if (isExpired || isDepleted) return null;
+      await validateSecret(row);
 
       return row;
+    }),
+
+  tagDeletion: publicProcedure
+    .input(GetSecretByIdSchema)
+    .mutation(async ({ ctx, input }) => {
+      const row = await ctx.db
+        .select({
+          id: secrets.id,
+          viewCount: secrets.viewCount,
+          maxViews: secrets.maxViews,
+          expiresAt: secrets.expiresAt,
+          taggedDeletionAt: secrets.taggedDeletionAt,
+        })
+        .from(secrets)
+        .where(eq(secrets.id, input.id))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Secret not found",
+        });
+      }
+
+      await validateSecret(row);
+
+      if (row.taggedDeletionAt) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Secret is already tagged, will be deleted soon",
+        });
+      }
+
+      const now = Date.now();
+      const requestedExpiry =
+        now + env.NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS * 1000;
+      const newExpiresAt = new Date(
+        Math.min(row.expiresAt.getTime(), requestedExpiry),
+      );
+
+      await ctx.db
+        .update(secrets)
+        .set({
+          expiresAt: newExpiresAt,
+          taggedDeletionAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(secrets.id, input.id));
+
+      return { expiresAt: newExpiresAt };
     }),
 
   consume: publicProcedure
@@ -64,25 +111,10 @@ export const secretRouter = createTRPCRouter({
         });
       }
 
-      const now = Date.now();
-      if (row.expiresAt.getTime() <= now) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Secret is expired",
-        });
-      }
-
-      const hasViewLimit = row.maxViews >= 1;
-      if (hasViewLimit && row.viewCount >= row.maxViews) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Secret has reached the maximum amount of views",
-        });
-      }
+      await validateSecret(row);
 
       const nextViewCount = row.viewCount + 1;
-
-      if (hasViewLimit && nextViewCount >= row.maxViews) {
+      if (row.maxViews >= 1 && nextViewCount >= row.maxViews) {
         await ctx.db.delete(secrets).where(eq(secrets.id, input.id));
         return {
           deleted: true as const,
@@ -101,3 +133,5 @@ export const secretRouter = createTRPCRouter({
       };
     }),
 });
+
+export type SecretRouter = typeof secretRouter;

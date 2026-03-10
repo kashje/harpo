@@ -8,6 +8,13 @@
       "when": 1773058369020,
       "tag": "0000_chilly_rhino",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1773156010270,
+      "tag": "0001_narrow_nick_fury",
+      "breakpoints": true
     }
   ]
 }
