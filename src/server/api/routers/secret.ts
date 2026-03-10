@@ -11,6 +11,11 @@ const GetSecretByIdSchema = z.object({
   id: z.string().uuid(),
 });
 
+const CheckPasswordSchema = z.object({
+  id: z.string().uuid(),
+  password: z.string().min(1),
+});
+
 export const secretRouter = createTRPCRouter({
   get: publicProcedure
     .input(GetSecretByIdSchema)
@@ -25,6 +30,7 @@ export const secretRouter = createTRPCRouter({
           fileType: secrets.fileType,
           expiresAt: secrets.expiresAt,
           taggedDeletionAt: secrets.taggedDeletionAt,
+          passwordHash: secrets.passwordHash,
         })
         .from(secrets)
         .where(eq(secrets.id, input.id))
@@ -35,7 +41,12 @@ export const secretRouter = createTRPCRouter({
 
       await validateSecret(row);
 
-      return row;
+      const { passwordHash, ...rest } = row;
+
+      return {
+        ...rest,
+        hasPassword: passwordHash !== null,
+      };
     }),
 
   tagDeletion: publicProcedure
@@ -131,6 +142,43 @@ export const secretRouter = createTRPCRouter({
         deleted: false as const,
         viewCount: nextViewCount,
       };
+    }),
+
+  checkPassword: publicProcedure
+    .input(CheckPasswordSchema)
+    .mutation(async ({ ctx, input }) => {
+      const row = await ctx.db
+        .select({
+          id: secrets.id,
+          passwordHash: secrets.passwordHash,
+        })
+        .from(secrets)
+        .where(eq(secrets.id, input.id))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Secret not found",
+        });
+      }
+
+      if (!row.passwordHash) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Secret is not password protected",
+        });
+      }
+
+      if (row.passwordHash !== input.password) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Invalid password",
+        });
+      }
+
+      return { valid: true as const };
     }),
 });
 

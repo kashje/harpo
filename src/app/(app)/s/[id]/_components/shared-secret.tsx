@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Eye, Copy, Check, FileText } from "lucide-react";
+import {
+  Download,
+  Eye,
+  Copy,
+  Check,
+  FileText,
+  FileKey,
+  BookKey,
+} from "lucide-react";
 
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
@@ -249,7 +257,14 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
   return (
     <Card className="bg-card/60 border-border/50 backdrop-blur-xl">
       <CardHeader>
-        <CardTitle className="text-foreground text-2xl font-bold text-balance">
+        <CardTitle className="text-foreground flex items-center gap-4 text-2xl font-bold text-balance">
+          <div className="bg-primary/10 group-hover:bg-primary/20 flex h-8 w-8 items-center justify-center transition-colors">
+            {isFile ? (
+              <FileKey className="text-primary h-4 w-4" />
+            ) : (
+              <BookKey className="text-primary h-4 w-4" />
+            )}
+          </div>
           {data?.name ?? secret.name}
         </CardTitle>
         <CardDescription className="text-muted-foreground">
