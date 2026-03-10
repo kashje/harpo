@@ -18,7 +18,7 @@ export default async function SharedSecretPage({
       <section className="pt-28 pb-20 md:pt-32">
         <div className="container mx-auto px-4">
           <div className="mx-auto max-w-2xl">
-            <PasswordGate secret={secret} />
+            <PasswordGate secret={secret} secretIdHash={id} />
           </div>
         </div>
       </section>

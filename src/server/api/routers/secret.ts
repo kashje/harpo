@@ -1,14 +1,20 @@
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 
+import { TRPCError } from "@trpc/server";
+
+import { env } from "@/env";
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
 import { secrets } from "@/server/db/schemas/secrets";
-import { TRPCError } from "@trpc/server";
-import { env } from "@/env";
-import { validateSecret } from "../utils/secret";
+import {
+  decodeSecretIdToken,
+  encodeSecretIdToken,
+  getCreatorFingerprint,
+  validateSecret,
+} from "../utils/secret";
 
-const GetSecretByIdSchema = z.object({
-  id: z.string().uuid(),
+const GetSecretSchema = z.object({
+  id: z.string().min(1),
 });
 
 const CheckPasswordSchema = z.object({
@@ -16,41 +22,65 @@ const CheckPasswordSchema = z.object({
   password: z.string().min(1),
 });
 
+const EncryptedPayloadSchema = z.object({
+  ciphertext: z.string().min(1),
+  iv: z.string().min(1),
+  version: z.literal("v1"),
+});
+
+const CreateSharedTextSecretSchema = z.object({
+  encrypted: EncryptedPayloadSchema,
+  name: z.string().min(1).max(255).optional(),
+  passphrase: z.string().min(1).optional(),
+  expiresIn: z.enum(["1h", "24h", "3d", "7d", "30d"]),
+  maxViews: z.enum(["1", "3", "5", "10", "unlimited"]),
+});
+
+const CreateSharedTextSecretResultSchema = z.object({
+  idToken: z.string().min(1),
+});
+
 export const secretRouter = createTRPCRouter({
-  get: publicProcedure
-    .input(GetSecretByIdSchema)
-    .query(async ({ ctx, input }) => {
-      const row = await ctx.db
-        .select({
-          id: secrets.id,
-          name: secrets.name,
-          encryptedPayload: secrets.encryptedPayload,
-          viewCount: secrets.viewCount,
-          maxViews: secrets.maxViews,
-          fileType: secrets.fileType,
-          expiresAt: secrets.expiresAt,
-          taggedDeletionAt: secrets.taggedDeletionAt,
-          passwordHash: secrets.passwordHash,
-        })
-        .from(secrets)
-        .where(eq(secrets.id, input.id))
-        .limit(1)
-        .then((rows) => rows[0] ?? null);
+  get: publicProcedure.input(GetSecretSchema).query(async ({ ctx, input }) => {
+    let resolvedId = input.id;
 
-      if (!row) return null;
+    try {
+      resolvedId = decodeSecretIdToken(input.id);
+    } catch {
+      return null;
+    }
 
-      await validateSecret(row);
+    const row = await ctx.db
+      .select({
+        id: secrets.id,
+        name: secrets.name,
+        encryptedPayload: secrets.encryptedPayload,
+        viewCount: secrets.viewCount,
+        maxViews: secrets.maxViews,
+        fileType: secrets.fileType,
+        expiresAt: secrets.expiresAt,
+        taggedDeletionAt: secrets.taggedDeletionAt,
+        passwordHash: secrets.passwordHash,
+      })
+      .from(secrets)
+      .where(eq(secrets.id, resolvedId))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
 
-      const { passwordHash, ...rest } = row;
+    if (!row) return null;
 
-      return {
-        ...rest,
-        hasPassword: passwordHash !== null,
-      };
-    }),
+    await validateSecret(row);
+
+    const { passwordHash, ...rest } = row;
+
+    return {
+      ...rest,
+      hasPassword: passwordHash !== null,
+    };
+  }),
 
   tagDeletion: publicProcedure
-    .input(GetSecretByIdSchema)
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const row = await ctx.db
         .select({
@@ -101,7 +131,7 @@ export const secretRouter = createTRPCRouter({
     }),
 
   consume: publicProcedure
-    .input(GetSecretByIdSchema)
+    .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const row = await ctx.db
         .select({
@@ -179,6 +209,73 @@ export const secretRouter = createTRPCRouter({
       }
 
       return { valid: true as const };
+    }),
+
+  create: publicProcedure
+    .input(CreateSharedTextSecretSchema)
+    .output(CreateSharedTextSecretResultSchema)
+    .mutation(async ({ ctx, input }) => {
+      const now = Date.now();
+
+      const expiresInMs: Record<(typeof input)["expiresIn"], number> = {
+        "1h": 60 * 60 * 1000,
+        "24h": 24 * 60 * 60 * 1000,
+        "3d": 3 * 24 * 60 * 60 * 1000,
+        "7d": 7 * 24 * 60 * 60 * 1000,
+        "30d": 30 * 24 * 60 * 60 * 1000,
+      };
+
+      const expiresAt = new Date(now + expiresInMs[input.expiresIn]);
+
+      const maxViewsMap: Record<(typeof input)["maxViews"], number> = {
+        "1": 1,
+        "3": 3,
+        "5": 5,
+        "10": 10,
+        unlimited: 0,
+      };
+
+      const maxViews = maxViewsMap[input.maxViews];
+
+      const ipHeader = ctx.headers.get("x-forwarded-for");
+      const ip = ipHeader?.split(",")[0]?.trim() ?? "";
+
+      const userAgent = ctx.headers.get("user-agent") ?? "";
+
+      const identification = getCreatorFingerprint({
+        ip,
+        userAgent,
+        date: new Date(now),
+      });
+
+      const encryptedPayload = JSON.stringify({
+        version: input.encrypted.version,
+        ciphertext: input.encrypted.ciphertext,
+        iv: input.encrypted.iv,
+      });
+
+      const [inserted] = await ctx.db
+        .insert(secrets)
+        .values({
+          name: input.name?.trim() ?? "Text secret",
+          identification,
+          encryptedPayload,
+          maxViews,
+          passwordHash: input.passphrase ?? null,
+          expiresAt,
+        })
+        .returning({ id: secrets.id });
+
+      if (!inserted) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create secret",
+        });
+      }
+
+      const idToken = encodeSecretIdToken(inserted.id);
+
+      return { idToken };
     }),
 });
 

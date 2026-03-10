@@ -26,6 +26,11 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Secret } from "@/types";
 import { env } from "@/env";
+import {
+  decryptText,
+  importAesKey,
+  type EncryptedPayload,
+} from "@/lib/secret-crypto";
 
 function fileExtensionFromType(fileType: string | null) {
   switch (fileType) {
@@ -78,9 +83,15 @@ async function downloadPayloadAsFile(opts: {
   }
 }
 
-export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
+export function SharedSecret({
+  secret,
+  secretIdHash,
+}: {
+  secret: NonNullable<Secret>;
+  secretIdHash: string;
+}) {
   const { data, isLoading, error, refetch } = api.secret.get.useQuery(
-    { id: secret.id },
+    { id: secretIdHash },
     { refetchOnWindowFocus: false, initialData: secret },
   );
 
@@ -90,6 +101,8 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [destroyCountdown, setDestroyCountdown] = useState<number | null>(null);
+  const [decryptedText, setDecryptedText] = useState<string | null>(null);
+  const [keyBase64url, setKeyBase64url] = useState<string | null>(null);
 
   const hasLimitedViews =
     data?.maxViews !== undefined &&
@@ -112,6 +125,43 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
 
   const isFile = !!data?.fileType;
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash ?? "";
+    const value = hash.startsWith("#") ? hash.slice(1) : hash;
+    setKeyBase64url(value || null);
+  }, []);
+
+  const getDecryptedSecret = useCallback(async () => {
+    if (!data || isFile) return null;
+    if (decryptedText !== null) return decryptedText;
+
+    try {
+      const payload = JSON.parse(data.encryptedPayload) as EncryptedPayload;
+
+      if (!keyBase64url) {
+        throw new Error(
+          "Missing decryption key in URL fragment. Make sure you used the full link.",
+        );
+      }
+
+      const key = await importAesKey(keyBase64url);
+      const plaintext = await decryptText({ encrypted: payload, key });
+
+      return plaintext;
+    } catch (error) {
+      const message =
+        (error as { message?: string }).message ??
+        "Unable to decrypt this secret.";
+      toast.error("Decryption failed", {
+        description: message,
+        closeButton: true,
+        position: "top-center",
+      });
+      return null;
+    }
+  }, [data, decryptedText, isFile, keyBase64url]);
+
   const handleReveal = useCallback(async () => {
     if (revealed) return;
 
@@ -124,6 +174,8 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
         const ttlSeconds = Number(
           env.NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS ?? 30,
         );
+        const descryptedSecret = await getDecryptedSecret();
+        setDecryptedText(descryptedSecret);
         setRevealed(true);
         setDestroyCountdown(ttlSeconds);
         await refetch();
@@ -147,6 +199,8 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
     try {
       const res = await consume.mutateAsync({ id: secret.id });
       if (!res.viewCount) return;
+      const descryptedSecret = await getDecryptedSecret();
+      setDecryptedText(descryptedSecret);
       setRevealed(true);
       await refetch();
     } catch (err) {
@@ -162,6 +216,7 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
     consume,
     secret.id,
     data?.expiresAt,
+    getDecryptedSecret,
     revealed,
     refetch,
     isLastView,
@@ -174,7 +229,9 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
     // If we're already on the last-view countdown, just allow copying without
     // consuming another view; the countdown will handle destruction.
     if (destroyCountdown !== null && revealed) {
-      await navigator.clipboard.writeText(data.encryptedPayload);
+      const text = isFile ? data.encryptedPayload : await getDecryptedSecret();
+      if (!text) return;
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
       return;
@@ -183,7 +240,9 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
     try {
       const res = await consume.mutateAsync({ id: secret.id });
       if (!res.viewCount) return;
-      await navigator.clipboard.writeText(data.encryptedPayload);
+      const text = isFile ? data.encryptedPayload : await getDecryptedSecret();
+      if (!text) return;
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
       await refetch();
@@ -202,6 +261,8 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
     refetch,
     destroyCountdown,
     revealed,
+    getDecryptedSecret,
+    isFile,
   ]);
 
   const handleDownload = useCallback(async () => {
@@ -358,7 +419,7 @@ export function SharedSecret({ secret }: { secret: NonNullable<Secret> }) {
                   {revealed ? (
                     <div className="relative">
                       <Textarea
-                        value={data.encryptedPayload}
+                        value={decryptedText ?? "Decrypting secret…"}
                         readOnly
                         className={cn(
                           "bg-input/50 border-border/50 min-h-[220px] resize-none pr-32 font-mono text-sm",

@@ -27,7 +27,13 @@ const passwordSchema = z.object({
 
 type PasswordFormValues = z.infer<typeof passwordSchema>;
 
-export function PasswordGate({ secret }: { secret: NonNullable<Secret> }) {
+export function PasswordGate({
+  secret,
+  secretIdHash,
+}: {
+  secret: NonNullable<Secret>;
+  secretIdHash: string;
+}) {
   const [unlocked, setUnlocked] = useState(!secret.hasPassword);
 
   const form = useForm<PasswordFormValues>({
@@ -58,7 +64,7 @@ export function PasswordGate({ secret }: { secret: NonNullable<Secret> }) {
   };
 
   if (unlocked) {
-    return <SharedSecret secret={secret} />;
+    return <SharedSecret secret={secret} secretIdHash={secretIdHash} />;
   }
 
   return (

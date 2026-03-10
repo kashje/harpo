@@ -11,6 +11,8 @@ export const env = createEnv({
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
+    URL_ID_ENC_KEY: z.string().min(1),
+    CREATOR_FINGERPRINT_SALT: z.string().min(1),
   },
 
   /**
@@ -29,6 +31,8 @@ export const env = createEnv({
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
     NODE_ENV: process.env.NODE_ENV,
+    URL_ID_ENC_KEY: process.env.URL_ID_ENC_KEY,
+    CREATOR_FINGERPRINT_SALT: process.env.CREATOR_FINGERPRINT_SALT,
     NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS: parseInt(
       process.env.NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS ?? "60",
     ),

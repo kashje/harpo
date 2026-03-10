@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Ban,
   Eye,
   EyeOff,
   FileText,
@@ -27,12 +28,17 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { api } from "@/trpc/react";
+import { generateAesKey, encryptText, exportAesKey } from "@/lib/secret-crypto";
+import { toast } from "sonner";
+import { GeneratedLinkDialog } from "@/app/(app)/_components/generated-link-dialog";
 
 type TabType = "text" | "file";
 
 const formSchema = z
   .object({
     mode: z.enum(["text", "file"]),
+    name: z.string().trim().optional(),
     secret: z.string().trim().optional(),
     passphrase: z.string().optional(),
     expiresIn: z.enum(["1h", "24h", "3d", "7d", "30d"]),
@@ -64,12 +70,17 @@ export function SecretForm() {
   const [usePassphrase, setUsePassphrase] = useState(false);
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [generatedLink, setGeneratedLink] = useState<string | null>(null);
+  const [showGeneratedLink, setShowGeneratedLink] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const createSharedText = api.secret.create.useMutation();
 
   const form = useForm<SecretFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       mode: "text",
+      name: "",
       secret: "",
       passphrase: "",
       expiresIn: "24h",
@@ -88,8 +99,55 @@ export function SecretForm() {
     !secret?.trim() ||
     (mode === "file" && (!files || files.length === 0));
 
-  const onSubmit = (values: SecretFormValues) => {
-    console.log("Creating secure link...", values);
+  const onSubmit = async (values: SecretFormValues) => {
+    if (values.mode !== "text") {
+      toast.error("File upload is not available yet", {
+        description:
+          "Right now only text secrets are supported for secure links.",
+      });
+      return;
+    }
+
+    try {
+      const secret = values.secret?.trim() ?? "";
+      if (!secret) {
+        return;
+      }
+
+      const key = await generateAesKey();
+      const encrypted = await encryptText({ plaintext: secret, key });
+      const keyBase64url = await exportAesKey(key);
+
+      const result = await createSharedText.mutateAsync({
+        encrypted,
+        name: values.name,
+        passphrase: usePassphrase
+          ? (values.passphrase ?? undefined)
+          : undefined,
+        expiresIn: values.expiresIn,
+        maxViews: values.maxViews,
+      });
+
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+
+      const link =
+        origin && result.idToken
+          ? `${origin}/s/${result.idToken}#${keyBase64url}`
+          : "";
+
+      setGeneratedLink(link || null);
+      setShowGeneratedLink(!!link);
+
+      form.reset();
+    } catch (error) {
+      toast.error("Unable to create secure link", {
+        description:
+          (error as { message?: string }).message ?? "Please try again.",
+        closeButton: true,
+        position: "top-center",
+      });
+    }
   };
 
   return (
@@ -97,6 +155,11 @@ export function SecretForm() {
       {/* Glow effect */}
 
       <div className="bg-card/80 border-border/50 relative rounded-2xl border p-6 shadow-2xl backdrop-blur-xl">
+        <GeneratedLinkDialog
+          open={showGeneratedLink}
+          onOpenChange={setShowGeneratedLink}
+          url={generatedLink}
+        />
         {/* Tab Switcher */}
         <div className="bg-secondary/50 mb-6 flex gap-2 rounded-xl p-1">
           <button
@@ -114,19 +177,22 @@ export function SecretForm() {
             <MessageSquareText className="h-4 w-4" />
             Text Secret
           </button>
+          {/* File upload is disabled for now */}
           <button
             type="button"
             onClick={() => {
-              setActiveTab("file");
-              form.setValue("mode", "file", { shouldValidate: true });
+              //setActiveTab("file");
+              //form.setValue("mode", "file", { shouldValidate: true });
             }}
+            disabled={true}
             className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
               activeTab === "file"
                 ? "bg-background text-foreground shadow-lg"
-                : "text-muted-foreground hover:text-foreground"
+                : "text-muted-foreground hover:text-foreground disabled:hover:text-muted-foreground"
             }`}
           >
-            <FileUp className="h-4 w-4" />
+            <Ban className="h-4 w-4" />
+            {/* <FileUp className="h-4 w-4" /> */}
             File Upload
           </button>
         </div>
@@ -281,8 +347,38 @@ export function SecretForm() {
             />
           )}
 
-          {/* Passphrase Toggle */}
+          <Controller
+            control={form.control}
+            name="name"
+            render={({ field, fieldState }) => (
+              <Field data-invalid={fieldState.invalid}>
+                <div className="flex items-center justify-between">
+                  <FieldLabel
+                    htmlFor={field.name}
+                    className="text-foreground font-medium"
+                  >
+                    Name
+                  </FieldLabel>
+                  <span className="text-muted-foreground flex items-center gap-1 text-[11px]">
+                    Not required
+                  </span>
+                </div>
+                <Input
+                  type="text"
+                  placeholder="Small description..."
+                  className="bg-input/50 border-border/50 text-foreground pr-10"
+                  aria-invalid={fieldState.invalid}
+                  {...field}
+                />
+                {fieldState.invalid && (
+                  <FieldError errors={[fieldState.error]} />
+                )}
+              </Field>
+            )}
+          />
+
           <div className="space-y-2">
+            {/* Passphrase Toggle */}
             <button
               type="button"
               onClick={() => setUsePassphrase(!usePassphrase)}
@@ -394,16 +490,11 @@ export function SecretForm() {
             type="submit"
             size="lg"
             className="h-12 w-full font-bold transition-all hover:opacity-80"
-            disabled={isSubmitDisabled}
+            disabled={isSubmitDisabled || createSharedText.isPending}
           >
             <Lock className="h-4 w-4" />
             Generate Secure Link
           </Button>
-
-          <p className="text-muted-foreground text-center text-[11px]">
-            Your data is encrypted locally using AES-256-GCM. The decryption key
-            only exists in the generated URL.
-          </p>
         </form>
       </div>
     </div>
