@@ -4,7 +4,6 @@ import {
   Lock,
   Timer,
   Eye,
-  Globe,
   Fingerprint,
   Zap,
   HardDrive,

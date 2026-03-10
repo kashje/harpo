@@ -6,6 +6,7 @@ import { Geist, JetBrains_Mono } from "next/font/google";
 import { TRPCReactProvider } from "@/trpc/react";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
@@ -58,6 +59,7 @@ export default function RootLayout({
         >
           <TRPCReactProvider>{children}</TRPCReactProvider>
         </ThemeProvider>
+        <Toaster />
       </body>
     </html>
   );
