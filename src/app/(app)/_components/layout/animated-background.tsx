@@ -12,39 +12,14 @@ export function AnimatedBackground() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let animationFrameId: number;
-    let particles: Array<{
-      x: number;
-      y: number;
-      vx: number;
-      vy: number;
-      size: number;
-      opacity: number;
-    }> = [];
-
     const resize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
     };
 
-    const createParticles = () => {
-      particles = [];
-      const particleCount = Math.floor((canvas.width * canvas.height) / 15000);
-      for (let i = 0; i < particleCount; i++) {
-        particles.push({
-          x: Math.random() * canvas.width,
-          y: Math.random() * canvas.height,
-          vx: (Math.random() - 0.5) * 0.3,
-          vy: (Math.random() - 0.5) * 0.3,
-          size: Math.random() * 2 + 0.5,
-          opacity: Math.random() * 0.5 + 0.1,
-        });
-      }
-    };
-
     const drawGrid = () => {
       const gridSize = 60;
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.02)";
       ctx.lineWidth = 1;
 
       for (let x = 0; x < canvas.width; x += gridSize) {
@@ -62,62 +37,13 @@ export function AnimatedBackground() {
       }
     };
 
-    const animate = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Draw grid
-      drawGrid();
-
-      // Draw and update particles
-      particles.forEach((particle) => {
-        particle.x += particle.vx;
-        particle.y += particle.vy;
-
-        // Wrap around edges
-        if (particle.x < 0) particle.x = canvas.width;
-        if (particle.x > canvas.width) particle.x = 0;
-        if (particle.y < 0) particle.y = canvas.height;
-        if (particle.y > canvas.height) particle.y = 0;
-
-        // Draw particle
-        ctx.beginPath();
-        ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(94, 234, 212, ${particle.opacity})`;
-        ctx.fill();
-      });
-
-      // Draw connections between nearby particles
-      particles.forEach((p1, i) => {
-        particles.slice(i + 1).forEach((p2) => {
-          const dx = p1.x - p2.x;
-          const dy = p1.y - p2.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-
-          if (distance < 120) {
-            ctx.beginPath();
-            ctx.moveTo(p1.x, p1.y);
-            ctx.lineTo(p2.x, p2.y);
-            ctx.strokeStyle = `rgba(94, 234, 212, ${0.1 * (1 - distance / 120)})`;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-          }
-        });
-      });
-
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
     resize();
-    createParticles();
-    animate();
 
-    window.addEventListener("resize", () => {
-      resize();
-      createParticles();
-    });
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    drawGrid();
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
       window.removeEventListener("resize", resize);
     };
   }, []);

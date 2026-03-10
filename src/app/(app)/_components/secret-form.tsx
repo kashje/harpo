@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { UseFormReturn } from "react-hook-form";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -24,7 +23,6 @@ import {
   FileUp,
   Lock,
   MessageSquareText,
-  Shield,
   Sparkles,
   Upload,
   X,
@@ -80,6 +78,16 @@ export function SecretForm() {
     },
   });
 
+  const mode = form.watch("mode");
+  const secret = form.watch("secret");
+  const files = form.watch("files");
+
+  const isSubmitDisabled =
+    form.formState.isSubmitting ||
+    (mode === "text" && !secret) ||
+    !secret?.trim() ||
+    (mode === "file" && (!files || files.length === 0));
+
   const onSubmit = (values: SecretFormValues) => {
     console.log("Creating secure link...", values);
   };
@@ -87,7 +95,6 @@ export function SecretForm() {
   return (
     <div className="relative">
       {/* Glow effect */}
-      <div className="from-primary/20 via-primary/10 to-primary/20 absolute -inset-1 rounded-2xl bg-gradient-to-r opacity-50 blur-xl" />
 
       <div className="bg-card/80 border-border/50 relative rounded-2xl border p-6 shadow-2xl backdrop-blur-xl">
         {/* Tab Switcher */}
@@ -386,10 +393,10 @@ export function SecretForm() {
           <Button
             type="submit"
             size="lg"
-            className="from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-primary-foreground shadow-primary/20 hover:shadow-primary/30 h-12 w-full rounded-xl bg-gradient-to-r font-semibold shadow-lg transition-all"
-            disabled={form.formState.isSubmitting}
+            className="h-12 w-full font-bold transition-all hover:opacity-80"
+            disabled={isSubmitDisabled}
           >
-            <Lock className="mr-2 h-4 w-4" />
+            <Lock className="h-4 w-4" />
             Generate Secure Link
           </Button>
 

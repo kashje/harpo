@@ -1,13 +1,21 @@
 "use client";
 
-import { Lock, Timer, Eye, Globe, Fingerprint, Zap } from "lucide-react";
+import {
+  Lock,
+  Timer,
+  Eye,
+  Globe,
+  Fingerprint,
+  Zap,
+  HardDrive,
+} from "lucide-react";
 
 const features = [
   {
     icon: Lock,
     title: "Client-side AES-256-GCM",
     description:
-      "Military-grade encryption happens in your browser. We only ever see ciphertext.",
+      "A highly secure encryption happens in your browser. We only ever see ciphertext.",
     highlight: true,
   },
   {
@@ -23,10 +31,10 @@ const features = [
       "Decryption keys live in URL fragments. Our servers literally cannot decrypt your data.",
   },
   {
-    icon: Globe,
-    title: "Edge-optimized storage",
+    icon: HardDrive,
+    title: "Choose your own storage",
     description:
-      "Encrypted payloads are stored at the edge for fast retrieval with automatic shredding.",
+      "The application allows you to setup your own storage with different providers such as: Local, MiniO, S3, DigitalOcean Spaces.",
   },
   {
     icon: Fingerprint,
@@ -50,7 +58,7 @@ export function Features() {
           Security
         </span>
         <h2 className="text-foreground text-2xl font-bold text-balance">
-          Built for paranoid security
+          Built for safe sharing
         </h2>
         <p className="text-muted-foreground mx-auto max-w-xl text-pretty">
           Enterprise-grade encryption with zero trust architecture. Your secrets
@@ -62,13 +70,13 @@ export function Features() {
         {features.map((feature, index) => (
           <div
             key={feature.title}
-            className="group bg-card/50 border-border/50 hover:border-primary/50 relative rounded-2xl border bg-gradient-to-br p-6 transition-all duration-300 hover:shadow-xl"
+            className="group hover:from-primary/10 hover:to-primary/5 hover:border-primary/50 relative rounded-2xl border p-6 transition-all duration-300 hover:bg-gradient-to-br hover:shadow-xl"
             style={{
-              animationDelay: `${index * 50}ms`,
+              animationDelay: `${index * 100}ms`,
             }}
           >
             {/* Hover glow effect */}
-            <div className="from-primary/5 pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+            <div className="from-primary/5 pointer-events-none absolute inset-0 bg-gradient-to-br to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
 
             <div className="relative">
               <div className="bg-secondary/80 group-hover:bg-primary/20 mb-4 flex h-11 w-11 items-center justify-center rounded-xl transition-transform group-hover:scale-110">

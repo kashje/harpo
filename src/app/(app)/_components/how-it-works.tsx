@@ -68,7 +68,10 @@ export function HowItWorks() {
                   </div>
                 )}
 
-                <div className="bg-card/50 border-border/50 hover:bg-card/80 hover:border-primary/20 group-hover:shadow-primary/5 h-full rounded-2xl border p-6 backdrop-blur-sm transition-all duration-300 group-hover:shadow-xl">
+                <div className="bg-card/50 border-border/50 hover:bg-card/80 hover:border-primary/20 h-full rounded-2xl border p-6 backdrop-blur-sm transition-all duration-300">
+                  {/* Hover glow effect */}
+                  <div className="from-primary/5 pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+
                   {/* Icon */}
                   <div className="relative mb-5">
                     <div
