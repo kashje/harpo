@@ -25,7 +25,7 @@ export function Footer() {
 
           <div className="flex items-center gap-4">
             <Link
-              href="https://github.com"
+              href="https://github.com/v1byte/harpo"
               target="_blank"
               className="bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary flex h-9 w-9 items-center justify-center rounded-lg transition-all"
             >
