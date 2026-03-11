@@ -179,5 +179,5 @@ jobs:
           target: prod
           push: true
           tags: ${{ steps.tags.outputs.tags }}
-          cache-from: type:gha
-          cache-to: type:gha,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
