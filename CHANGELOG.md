@@ -1,3 +1,10 @@
+# [1.0.0-next.4](https://github.com/v1byte/harpo/compare/v1.0.0-next.3...v1.0.0-next.4) (2026-03-11)
+
+
+### Bug Fixes
+
+* Dockerfile ([cab0d01](https://github.com/v1byte/harpo/commit/cab0d0160de16ffb41bc6a5cdbb7aa34042fdb7e))
+
 # [1.0.0-next.3](https://github.com/v1byte/harpo/compare/v1.0.0-next.2...v1.0.0-next.3) (2026-03-11)
 
 
