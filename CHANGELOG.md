@@ -1,3 +1,10 @@
+# [1.0.0-next.5](https://github.com/v1byte/harpo/compare/v1.0.0-next.4...v1.0.0-next.5) (2026-03-11)
+
+
+### Bug Fixes
+
+* dockerfile ([e64b2e3](https://github.com/v1byte/harpo/commit/e64b2e39be3eca653fad53f3dee0c220f17cda0e))
+
 # [1.0.0-next.4](https://github.com/v1byte/harpo/compare/v1.0.0-next.3...v1.0.0-next.4) (2026-03-11)
 
 
