@@ -17,9 +17,10 @@ const GetSecretSchema = z.object({
   id: z.string().min(1),
 });
 
+/** Client sends the SHA-256 hash of the passphrase; server never sees plaintext. */
 const CheckPasswordSchema = z.object({
   id: z.string().uuid(),
-  password: z.string().min(1),
+  password: z.string().min(1), // passphrase hash (hex)
 });
 
 const EncryptedPayloadSchema = z.object({
@@ -28,10 +29,11 @@ const EncryptedPayloadSchema = z.object({
   version: z.literal("v1"),
 });
 
+/** Client sends passphrase as SHA-256 hash (hex); server never sees plaintext. */
 const CreateSharedTextSecretSchema = z.object({
   encrypted: EncryptedPayloadSchema,
   name: z.string().max(255).optional(),
-  passphrase: z.string().optional(),
+  passphrase: z.string().optional(), // passphrase hash (hex)
   expiresIn: z.enum(["1h", "24h", "3d", "7d", "30d"]),
   maxViews: z.enum(["1", "3", "5", "10", "unlimited"]),
 });

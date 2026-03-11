@@ -29,7 +29,12 @@ import {
   X,
 } from "lucide-react";
 import { api } from "@/trpc/react";
-import { generateAesKey, encryptText, exportAesKey } from "@/lib/secret-crypto";
+import {
+  generateAesKey,
+  encryptText,
+  exportAesKey,
+  hashPassphrase,
+} from "@/lib/secret-crypto";
 import { toast } from "sonner";
 import { GeneratedLinkDialog } from "@/app/(app)/_components/generated-link-dialog";
 
@@ -118,12 +123,15 @@ export function SecretForm() {
       const encrypted = await encryptText({ plaintext: secret, key });
       const keyBase64url = await exportAesKey(key);
 
+      const passphraseHash =
+        usePassphrase && values.passphrase?.trim()
+          ? await hashPassphrase(values.passphrase.trim())
+          : undefined;
+
       const result = await createSharedText.mutateAsync({
         encrypted,
         name: values.name,
-        passphrase: usePassphrase
-          ? (values.passphrase ?? undefined)
-          : undefined,
+        passphrase: passphraseHash,
         expiresIn: values.expiresIn,
         maxViews: values.maxViews,
       });
