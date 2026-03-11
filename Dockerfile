@@ -13,27 +13,28 @@ RUN npm install -g corepack@latest && \
 # Next.js collects anonymous telemetry data.
 # Learn more here: https://nextjs.org/telemetry
 # Disable telemetry on the following line, remove it if you want to enable telemetry.
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXT_TELEMETRY_DISABLED=1
 
 # Dev image
 FROM base AS dev
 
 EXPOSE 3000
-ENV PORT 3000
-ENV HOSTNAME localhost
+ENV PORT=3000
+ENV HOSTNAME=localhost
 
 CMD ["sh", "-c", "pnpm dev"]
 
-FROM base as builder
+FROM base AS builder
 
+ENV CI=true
 ENV SKIP_ENV_VALIDATION=1
 
 COPY --link pnpm-lock.yaml ./
-RUN pnpm fetch --prod
+RUN pnpm fetch
 
 COPY --link . .
 
-RUN pnpm install --frozen-lockfile --offline --prod && \
+RUN pnpm install --frozen-lockfile --offline && \
     pnpm build
 
 # Prod image
@@ -41,12 +42,12 @@ FROM node_upstream AS prod
 
 WORKDIR /srv/app
 
-ENV NODE_ENV production
+ENV NODE_ENV=production
 # Delete following line in case you want to enable telemetry.
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN addgroup --gid 1999 nodejs; \
-    adduser --uid 1999 --ingroup nodejs nextjs
+    adduser -D -u 1999 -G nodejs nextjs
 
 COPY --from=builder --link /srv/app/public ./public
 
@@ -62,6 +63,6 @@ COPY --from=builder --link --chown=1999:1999 /srv/app/.next/static ./.next/stati
 USER nextjs
 
 EXPOSE 3000
-ENV HOSTNAME "0.0.0.0"
+ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]
