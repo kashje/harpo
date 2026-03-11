@@ -75,9 +75,9 @@ jobs:
           cat << 'EOF' > .env.test
           NODE_ENV=test
           DATABASE_URL=postgresql://harpo:harpo@localhost:5432/harpo_test
-          URL_ID_ENC_KEY=${{ secrets.URL_ID_ENC_KEY || 'dGVzdC1rZXktMzItYnl0ZXMtYmFzZTY0' }}
+          URL_ID_ENC_KEY=${{ secrets.URL_ID_ENC_KEY }}
           CREATOR_FINGERPRINT_SALT=ci-test-salt
-          NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS=30
+          NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS=5
           EOF
 
       - name: Run migrations
