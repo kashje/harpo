@@ -45,8 +45,8 @@ ENV NODE_ENV production
 # Delete following line in case you want to enable telemetry.
 ENV NEXT_TELEMETRY_DISABLED 1
 
-RUN addgroup --gid 1001 nodejs; \
-    adduser --uid 1001 nextjs
+RUN addgroup --gid 1999 nodejs; \
+    adduser --uid 1999 --ingroup nodejs nextjs
 
 COPY --from=builder --link /srv/app/public ./public
 
@@ -56,8 +56,8 @@ RUN mkdir .next; \
 
 # Automatically leverage output traces to reduce image size
 # https://nextjs.org/docs/advanced-features/output-file-tracing
-COPY --from=builder --link --chown=1001:1001 /srv/app/.next/standalone ./
-COPY --from=builder --link --chown=1001:1001 /srv/app/.next/static ./.next/static
+COPY --from=builder --link --chown=1999:1999 /srv/app/.next/standalone ./
+COPY --from=builder --link --chown=1999:1999 /srv/app/.next/static ./.next/static
 
 USER nextjs
 
