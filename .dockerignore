@@ -1,0 +1,45 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build output
+.next
+out
+dist
+
+# Git
+.git
+.gitignore
+
+# Env (secrets; build uses SKIP_ENV_VALIDATION)
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.idea
+.vscode
+*.swp
+.DS_Store
+Thumbs.db
+
+# Docs and misc (not needed in image)
+*.md
+docs
+.cursor
+.agents
+
+# Tests (not needed for production build)
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+vitest.config.ts
+vitest.setup.ts
+.env.test
+.env.test.example
+
+# Docker
+Dockerfile*
+compose*.yml
+.dockerignore
