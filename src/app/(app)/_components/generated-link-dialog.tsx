@@ -42,7 +42,7 @@ export function GeneratedLinkDialog(props: {
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className="max-w-lg!">
+      <DialogContent className="md:max-w-lg!">
         <DialogHeader>
           <DialogTitle className="text-foreground flex items-center gap-2 font-bold text-balance">
             <Link2 className="text-primary h-4 w-4" />

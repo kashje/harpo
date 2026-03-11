@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { FileText, Share2, Trash2, ArrowRight } from "lucide-react";
+import { FileText, Share2, Trash2, ArrowRight, ArrowDown } from "lucide-react";
 
 const steps = [
   {
@@ -42,7 +42,7 @@ const steps = [
 export function HowItWorks() {
   return (
     <section className="relative py-24">
-      <Card className="bg-card/30 relative mx-auto w-max px-6">
+      <Card className="bg-card/30 relative w-full px-6 lg:mx-auto lg:w-max">
         <CardHeader className="pt-6">
           <CardTitle>
             <span className="text-primary bg-primary/10 inline-block px-3 py-1 text-xs font-semibold tracking-[0.2em] uppercase">
@@ -63,9 +63,14 @@ export function HowItWorks() {
               <div key={step.number} className="group relative">
                 {/* Connector arrow */}
                 {index < steps.length - 1 && (
-                  <div className="text-muted-foreground/30 absolute top-12 -right-3 z-10 hidden h-6 w-6 items-center justify-center md:flex">
-                    <ArrowRight className="h-5 w-5" />
-                  </div>
+                  <>
+                    <div className="text-muted-foreground/30 absolute top-12 -right-3 z-10 hidden h-6 w-6 items-center justify-center md:flex">
+                      <ArrowRight className="h-5 w-5" />
+                    </div>
+                    <div className="text-muted-foreground/30 absolute right-1/2 -bottom-3 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center md:hidden">
+                      <ArrowDown className="h-5 w-5" />
+                    </div>
+                  </>
                 )}
 
                 <div className="bg-card/50 border-border/50 hover:bg-card/80 hover:border-primary/20 h-full rounded-2xl border p-6 backdrop-blur-sm transition-all duration-300">

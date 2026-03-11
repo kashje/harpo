@@ -30,8 +30,8 @@ const EncryptedPayloadSchema = z.object({
 
 const CreateSharedTextSecretSchema = z.object({
   encrypted: EncryptedPayloadSchema,
-  name: z.string().min(1).max(255).optional(),
-  passphrase: z.string().min(1).optional(),
+  name: z.string().max(255).optional(),
+  passphrase: z.string().optional(),
   expiresIn: z.enum(["1h", "24h", "3d", "7d", "30d"]),
   maxViews: z.enum(["1", "3", "5", "10", "unlimited"]),
 });

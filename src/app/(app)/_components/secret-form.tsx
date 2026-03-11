@@ -175,7 +175,7 @@ export function SecretForm() {
             }`}
           >
             <MessageSquareText className="h-4 w-4" />
-            Text Secret
+            Text <span className="hidden md:inline">Secret</span>
           </button>
           {/* File upload is disabled for now */}
           <button
@@ -193,7 +193,7 @@ export function SecretForm() {
           >
             <Ban className="h-4 w-4" />
             {/* <FileUp className="h-4 w-4" /> */}
-            File Upload
+            File <span className="hidden md:inline">Upload</span>
           </button>
         </div>
 
@@ -214,7 +214,12 @@ export function SecretForm() {
                     </FieldLabel>
                     <span className="text-muted-foreground flex items-center gap-1 text-[11px]">
                       <Sparkles className="h-3 w-3" />
-                      Encrypted before leaving your device
+                      <span className="hidden md:inline">
+                        Encrypted before leaving your device
+                      </span>
+                      <span className="inline md:hidden">
+                        Securely encrypted
+                      </span>
                     </span>
                   </div>
                   <Textarea
