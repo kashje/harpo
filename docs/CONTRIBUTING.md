@@ -10,10 +10,6 @@ Please read the following sections in this document before submitting your pull 
 
 We use precise rules for commit messages. This ensures that the commit history is easy to understand and that the commits are meaningful.
 
-Before creating a Pull Request, please check wether your commits comply with the commit conventions used in this repository.
-
-The commit message convention is based on the [Angular Commit Message Guidelines](https://github.com/angular/angular/blob/22b96b9/CONTRIBUTING.md#-commit-message-guidelines).
-
 ### Commit Message Format
 
 Each commit message should consist of a `<type>(<scope>): <subject>` structure.
@@ -43,3 +39,35 @@ The following types are used in this repository:
 
 Before you create a Pull Request, please check whether your commits comply with
 the commit conventions used in this repository.
+
+## Testing
+
+Tests use [Vitest](https://vitest.dev). Run all tests with `pnpm test` or `pnpm test:run`.
+
+Integration tests require a test database and a valid `.env.test` (see `.env.test.example`). **If `.env.test` is missing or incomplete, tests will fail.**
+
+### Test database (Docker)
+
+1. Start a Postgres container for tests:
+   ```bash
+   pnpm test:db:up
+   ```
+2. Copy the example env and set the required secrets:
+   ```bash
+   cp .env.test.example .env.test
+   ```
+   Edit `.env.test`: set `URL_ID_ENC_KEY` (e.g. `openssl rand -base64 32`) and `CREATOR_FINGERPRINT_SALT`.
+3. Apply the schema to the test database:
+   ```bash
+   pnpm test:db:push
+   ```
+4. Run tests:
+   ```bash
+   pnpm test:run
+   ```
+
+To stop the test database: `pnpm test:db:down`.
+
+Before creating a Pull Request, please check wether your commits comply with the commit conventions used in this repository.
+
+The commit message convention is based on the [Angular Commit Message Guidelines](https://github.com/angular/angular/blob/22b96b9/CONTRIBUTING.md#-commit-message-guidelines).
