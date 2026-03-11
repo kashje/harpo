@@ -48,12 +48,12 @@ Copy the example env file and fill in the required values:
 cp .env.example .env
 ```
 
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string (e.g. `postgresql://user:pass@localhost:5432/harpo`) |
-| `URL_ID_ENC_KEY` | Secret key used to encrypt/decrypt share URLs (min 1 character) |
-| `CREATOR_FINGERPRINT_SALT` | Salt for creator fingerprinting (min 1 character) |
-| `NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS` | Seconds a revealed secret is visible before destruction (default: 60) |
+| Variable                                  | Description                                                                       |
+| ----------------------------------------- | --------------------------------------------------------------------------------- |
+| `DATABASE_URL`                            | PostgreSQL connection string (e.g. `postgresql://user:pass@localhost:5432/harpo`) |
+| `URL_ID_ENC_KEY`                          | Secret key used to encrypt/decrypt share URLs (min 1 character)                   |
+| `CREATOR_FINGERPRINT_SALT`                | Salt for creator fingerprinting (min 1 character)                                 |
+| `NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS` | Seconds a revealed secret is visible before destruction (default: 60)             |
 
 See `src/env.js` for the full schema.
 
@@ -97,19 +97,23 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Scripts
 
-| Command | Description |
-|---------|-------------|
-| `pnpm dev` | Start Next.js dev server (Turbo) |
-| `pnpm build` | Production build |
-| `pnpm start` | Start production server |
-| `pnpm preview` | Build and start production server |
-| `pnpm check` | Lint and typecheck |
-| `pnpm lint` / `pnpm lint:fix` | ESLint |
-| `pnpm format:check` / `pnpm format:write` | Prettier |
-| `pnpm db:generate` | Generate Drizzle migrations |
-| `pnpm db:migrate` | Run Drizzle migrations |
-| `pnpm db:push` | Push schema to DB (dev) |
-| `pnpm db:studio` | Open Drizzle Studio |
+| Command                                   | Description                                  |
+| ----------------------------------------- | -------------------------------------------- |
+| `pnpm dev`                                | Start Next.js dev server (Turbo)             |
+| `pnpm build`                              | Production build                             |
+| `pnpm start`                              | Start production server                      |
+| `pnpm preview`                            | Build and start production server            |
+| `pnpm check`                              | Lint and typecheck                           |
+| `pnpm lint` / `pnpm lint:fix`             | ESLint                                       |
+| `pnpm format:check` / `pnpm format:write` | Prettier                                     |
+| `pnpm db:generate`                        | Generate Drizzle migrations                  |
+| `pnpm db:migrate`                         | Run Drizzle migrations                       |
+| `pnpm db:push`                            | Push schema to DB (dev)                      |
+| `pnpm db:studio`                          | Open Drizzle Studio                          |
+| `pnpm test:db:up`                         | Creates a test postgres database container   |
+| `pnpm test:db:down`                       | Removes the test postgres database container |
+| `pnpm test:db:push`                       | Runs migrations for the test database        |
+| `pnpm test:run`                           | Runs the test suite (vitest)                 |
 
 ## Documentation
 
