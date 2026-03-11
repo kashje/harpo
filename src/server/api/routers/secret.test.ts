@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { getCaller } from "@/test/trpc";
-import { encryptText, generateAesKey } from "@/lib/secret-crypto";
+import {
+  encryptText,
+  generateAesKey,
+  hashPassphrase,
+} from "@/lib/secret-crypto";
 import { env } from "@/env";
-import { TRPCError } from "@trpc/server";
+import type { TRPCError } from "@trpc/server";
 
 describe("secret router", () => {
-  describe("get", () => {
+  describe("get secret", () => {
     it("returns null for invalid id token", async () => {
       const caller = await getCaller();
       const result = await caller.secret.get({ id: "invalid" });
@@ -131,6 +135,52 @@ describe("secret router", () => {
       await expect(deleted).rejects.toThrowError(
         expect.objectContaining({
           message: "Secret is expired",
+        }) as TRPCError,
+      );
+    });
+  });
+
+  describe("secret password protection", () => {
+    it("creates a secret with a password and checks it", async () => {
+      const caller = await getCaller();
+      const key = await generateAesKey();
+      const encrypted = await encryptText({
+        plaintext: "integration test payload with password",
+        key,
+      });
+
+      const passphraseHash = await hashPassphrase("test-password");
+
+      const { idToken } = await caller.secret.create({
+        encrypted,
+        name: "Test secret with password",
+        expiresIn: "24h",
+        maxViews: "1",
+        passphrase: passphraseHash,
+      });
+
+      const row = await caller.secret.get({ id: idToken });
+      expect(row).not.toBeNull();
+      expect((row as Record<string, unknown>).passwordHash).toBeUndefined();
+
+      const id = row!.id;
+
+      const rightPassword = await caller.secret.checkPassword({
+        id,
+        password: passphraseHash,
+      });
+
+      expect(rightPassword.valid).toBe(true);
+
+      const wrongPassword = caller.secret.checkPassword({
+        id,
+        password: "wrong-password",
+      });
+
+      // Expect error because the password is wrong
+      await expect(wrongPassword).rejects.toThrowError(
+        expect.objectContaining({
+          message: "Invalid password",
         }) as TRPCError,
       );
     });
