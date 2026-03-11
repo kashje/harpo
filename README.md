@@ -95,6 +95,10 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Self-hosting
+
+To run Harpo in production with Docker (app + database), see **[Self-hosting](docs/SELF_HOST.md)**. You’ll use the production compose stack, set the required env vars, run migrations once, then start with `docker compose -f compose.yml -f compose.prod.yml up -d`.
+
 ## Scripts
 
 | Command                                   | Description                                  |
@@ -117,6 +121,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Documentation
 
+- [Self-hosting](docs/SELF_HOST.md) — Run Harpo in production with Docker
 - [Contributing](docs/CONTRIBUTING.md) — Commit conventions and how to contribute
 
 ## License

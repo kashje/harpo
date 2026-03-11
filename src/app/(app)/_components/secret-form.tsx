@@ -21,7 +21,6 @@ import {
   Eye,
   EyeOff,
   FileText,
-  FileUp,
   Lock,
   MessageSquareText,
   Sparkles,

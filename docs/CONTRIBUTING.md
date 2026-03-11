@@ -40,6 +40,15 @@ The following types are used in this repository:
 Before you create a Pull Request, please check whether your commits comply with
 the commit conventions used in this repository.
 
+## Releases
+
+Releases are created automatically by [semantic-release](https://github.com/semantic-release/semantic-release) from conventional commits:
+
+- **Merge to `next`** — Creates a prerelease (e.g. `v0.1.0-next.0`) and publishes a Docker image tagged `:next`.
+- **Merge to `main`** — Creates a stable release (e.g. `v0.1.0`) and publishes a Docker image tagged `:latest` and with the version tag.
+
+Only commits that affect the release (e.g. `feat:`, `fix:`) will trigger a new version.
+
 ## Testing
 
 Tests use [Vitest](https://vitest.dev). Run all tests with `pnpm test` or `pnpm test:run`.

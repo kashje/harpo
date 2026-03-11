@@ -3,7 +3,7 @@
 import { Github, Logo } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { useParams, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export function Header() {
