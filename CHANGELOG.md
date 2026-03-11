@@ -1,3 +1,10 @@
+# [1.0.0-next.3](https://github.com/v1byte/harpo/compare/v1.0.0-next.2...v1.0.0-next.3) (2026-03-11)
+
+
+### Bug Fixes
+
+* cache step (testing ci) ([a98cc8c](https://github.com/v1byte/harpo/commit/a98cc8cebd73f4246d27eb72c57e2cd6b3a57dd1))
+
 # [1.0.0-next.2](https://github.com/v1byte/harpo/compare/v1.0.0-next.1...v1.0.0-next.2) (2026-03-11)
 
 
