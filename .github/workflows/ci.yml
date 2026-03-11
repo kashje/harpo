@@ -16,6 +16,8 @@ jobs:
   lint:
     name: Lint & typecheck
     runs-on: ubuntu-latest
+    env:
+      SKIP_ENV_VALIDATION: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -73,7 +75,7 @@ jobs:
           cat << 'EOF' > .env.test
           NODE_ENV=test
           DATABASE_URL=postgresql://harpo:harpo@localhost:5432/harpo_test
-          URL_ID_ENC_KEY=${{ secrets.URL_ID_ENC_KEY }}
+          URL_ID_ENC_KEY=${{ secrets.URL_ID_ENC_KEY || 'dGVzdC1rZXktMzItYnl0ZXMtYmFzZTY0' }}
           CREATOR_FINGERPRINT_SALT=ci-test-salt
           NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS=30
           EOF
@@ -89,6 +91,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, test]
     if: github.event_name == 'release' && github.event.action == 'published'
+    env:
+      SKIP_ENV_VALIDATION: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -103,8 +107,6 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        env:
-          SKIP_ENV_VALIDATION: 1
         run: pnpm build
 
   release:
