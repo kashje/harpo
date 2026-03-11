@@ -22,7 +22,8 @@
     "test:db:up": "docker compose -f compose.test.yml up -d",
     "test:db:down": "docker compose -f compose.test.yml down",
     "test:db:push": "dotenv -e .env.test -- pnpm db:push",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "release": "semantic-release"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -69,6 +70,7 @@
     "postcss": "^8.5.3",
     "prettier": "^3.5.3",
     "prettier-plugin-tailwindcss": "^0.6.11",
+    "semantic-release": "^24.2.0",
     "tailwindcss": "^4.0.15",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.27.0",

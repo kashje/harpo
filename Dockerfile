@@ -26,6 +26,8 @@ CMD ["sh", "-c", "pnpm dev"]
 
 FROM base as builder
 
+ENV SKIP_ENV_VALIDATION=1
+
 COPY --link pnpm-lock.yaml ./
 RUN pnpm fetch --prod
 
