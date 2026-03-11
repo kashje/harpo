@@ -9,6 +9,7 @@ import { toast } from "sonner";
 
 import type { Secret } from "@/types";
 import { api } from "@/trpc/react";
+import { hashPassphrase } from "@/lib/secret-crypto";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -47,9 +48,10 @@ export function PasswordGate({
 
   const onSubmit = async (values: PasswordFormValues) => {
     try {
+      const passwordHash = await hashPassphrase(values.password);
       await checkPassword.mutateAsync({
         id: secret.id,
-        password: values.password,
+        password: passwordHash,
       });
       setUnlocked(true);
     } catch (err) {

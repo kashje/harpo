@@ -108,3 +108,16 @@ export const decryptText = async (params: {
   const decoder = new TextDecoder();
   return decoder.decode(plaintextBytes);
 };
+
+/**
+ * Hash a passphrase client-side with SHA-256 (hex).
+ * The server only ever receives and stores this hash, never the plaintext.
+ */
+export async function hashPassphrase(passphrase: string): Promise<string> {
+  const data = new TextEncoder().encode(passphrase);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  const bytes = new Uint8Array(digest);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
