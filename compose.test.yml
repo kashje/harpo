@@ -1,0 +1,19 @@
+# Postgres for running integration tests. Use with:
+#   docker compose -f compose.test.yml up -d
+# Then copy .env.test.example to .env.test and set DATABASE_URL (and other vars).
+# Run migrations: pnpm test:db:push (or dotenv -e .env.test -- pnpm db:push)
+
+services:
+  test-db:
+    image: postgres:${POSTGRES_VERSION:-17}-alpine
+    environment:
+      POSTGRES_DB: harpo_test
+      POSTGRES_USER: harpo
+      POSTGRES_PASSWORD: harpo
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-d", "harpo_test", "-U", "harpo"]
+      timeout: 5s
+      retries: 5
+      start_period: 5s

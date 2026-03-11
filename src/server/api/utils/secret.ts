@@ -54,7 +54,7 @@ const base64urlDecode = (input: string): Buffer => {
   return Buffer.from(padded, "base64");
 };
 
-const urlIdEncKey = Buffer.from((env.URL_ID_ENC_KEY as string) ?? "", "base64");
+const urlIdEncKey = Buffer.from(env.URL_ID_ENC_KEY ?? "", "base64");
 
 if (urlIdEncKey.length > 0 && urlIdEncKey.length !== 32) {
   throw new Error("URL_ID_ENC_KEY must be a 32-byte key encoded as base64");
@@ -123,7 +123,7 @@ export const getCreatorFingerprint = (
   const dayBucket = date.toISOString().slice(0, 10);
 
   const raw = `${ip}|${userAgent}|${dayBucket}`;
-  const hmac = createHmac("sha256", salt as string);
+  const hmac = createHmac("sha256", salt);
   hmac.update(raw, "utf8");
 
   return base64urlEncode(hmac.digest());

@@ -17,6 +17,11 @@
     "lint:fix": "next lint --fix",
     "preview": "next build && next start",
     "start": "next start",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:db:up": "docker compose -f compose.test.yml up -d",
+    "test:db:down": "docker compose -f compose.test.yml down",
+    "test:db:push": "dotenv -e .env.test -- pnpm db:push",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -48,19 +53,27 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
     "@tailwindcss/postcss": "^4.0.15",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.0.1",
     "@types/node": "^20.14.10",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "dotenv": "^16.4.5",
+    "dotenv-cli": "^7.4.4",
     "drizzle-kit": "^0.30.5",
     "eslint": "^9.23.0",
     "eslint-config-next": "^15.2.3",
     "eslint-plugin-drizzle": "^0.2.3",
+    "jsdom": "^25.0.1",
     "postcss": "^8.5.3",
     "prettier": "^3.5.3",
     "prettier-plugin-tailwindcss": "^0.6.11",
     "tailwindcss": "^4.0.15",
     "typescript": "^5.8.2",
-    "typescript-eslint": "^8.27.0"
+    "typescript-eslint": "^8.27.0",
+    "vite-tsconfig-paths": "^5.1.2",
+    "vitest": "^2.1.6"
   },
   "ct3aMetadata": {
     "initVersion": "7.40.0"
