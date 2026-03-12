@@ -1,3 +1,10 @@
+# [1.0.0-next.7](https://github.com/v1byte/harpo/compare/v1.0.0-next.6...v1.0.0-next.7) (2026-03-12)
+
+
+### Bug Fixes
+
+* ci use pat ([9a5ea37](https://github.com/v1byte/harpo/commit/9a5ea372e44e3e30e080adbc1b45fc1e2e673edf))
+
 # [1.0.0-next.6](https://github.com/v1byte/harpo/compare/v1.0.0-next.5...v1.0.0-next.6) (2026-03-12)
 
 
