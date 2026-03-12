@@ -1,3 +1,10 @@
+# [1.0.0-next.6](https://github.com/v1byte/harpo/compare/v1.0.0-next.5...v1.0.0-next.6) (2026-03-12)
+
+
+### Bug Fixes
+
+* ci ([67827b8](https://github.com/v1byte/harpo/commit/67827b86178edd778b5adf77f8a22b5625e417e0))
+
 # [1.0.0-next.5](https://github.com/v1byte/harpo/compare/v1.0.0-next.4...v1.0.0-next.5) (2026-03-11)
 
 
