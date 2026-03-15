@@ -28,7 +28,7 @@ docker run -it --rm --name harpo -p 3000:3000 \
    -e DATABASE_URL=postgresql://harpo:harpo@database:5432/harpo \
    -e URL_ID_ENC_KEY=your-base64-encoded-key -e CREATOR_FINGERPRINT_SALT=your-base64-encoded-salt \
    -e NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS=60 \
-   ghcr.io/v1byte/harpo:latest
+   ghcr.io/kashje/harpo:latest
 ```
 
 Or with an environment file:
@@ -36,7 +36,7 @@ Or with an environment file:
 ```bash
 docker run -it --rm --name harpo -p 3000:3000 \
    --env-file .env \
-   ghcr.io/v1byte/harpo:latest
+   ghcr.io/kashje/harpo:latest
 ```
 
 ## Run with Docker Compose

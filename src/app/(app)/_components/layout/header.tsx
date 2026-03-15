@@ -55,7 +55,7 @@ export function Header() {
           )}
 
           <Button size="icon" variant="link" asChild>
-            <Link href="https://github.com/v1byte/harpo" target="_blank">
+            <Link href="https://github.com/kashje/harpo" target="_blank">
               <Github className="size-5" />
             </Link>
           </Button>
