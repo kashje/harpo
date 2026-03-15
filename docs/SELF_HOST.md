@@ -43,6 +43,7 @@ docker run -it --rm --name harpo -p 3000:3000 \
 
 1. **Create `.env`** (e.g. copy from `.env.example`) and set at least:
    - `DATABASE_URL=postgresql://harpo:harpo@database:5432/harpo` (if using the compose database)
+   - `REDIS_URL=redis://redis:6379` (if using the compose Redis)
    - `URL_ID_ENC_KEY` and `CREATOR_FINGERPRINT_SALT` to secure random values
 
    If you want you can set the optional variables:
@@ -54,8 +55,10 @@ docker run -it --rm --name harpo -p 3000:3000 \
    | `POSTGRES_DB`       | Database name           | harpo   |
    | `POSTGRES_USER`     | Database user           | harpo   |
    | `POSTGRES_PASSWORD` | Database password       | harpo   |
+   | `REDIS_VERSION`     | Redis image tag         | 7       |
+   | `REDIS_PORT`        | Redis host port         | 6379    |
 
-2. **Start the stack** (app + database):
+2. **Start the stack** (app + database + Redis):
 
    ```bash
    docker compose -f compose.yml -f compose.prod.yml up -d
@@ -67,5 +70,6 @@ docker run -it --rm --name harpo -p 3000:3000 \
 
 ## Compose files overview
 
-- **compose.yml** — Base: app service and `DATABASE_URL`.
-- **compose.prod.yml** — Production: build app with Docker target `prod`, add Postgres, and wire app to the database. Use together: `docker compose -f compose.yml -f compose.prod.yml up -d`.
+- **compose.yml** — Base: app (with `DATABASE_URL`, `REDIS_URL`), Postgres, and Redis. Shared by dev and prod.
+- **compose.override.yml** — Development: build app with target `dev`, mount source, add Drizzle Studio. Use with: `docker compose -f compose.yml -f compose.override.yml up -d`.
+- **compose.prod.yml** — Production: build app with Docker target `prod`. Use with: `docker compose -f compose.yml -f compose.prod.yml up -d`.
