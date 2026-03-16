@@ -1,3 +1,10 @@
+# [1.0.0-next.2](https://github.com/kashje/harpo/compare/v1.0.0-next.1...v1.0.0-next.2) (2026-03-16)
+
+
+### Features
+
+* add rate limits ([94a77ed](https://github.com/kashje/harpo/commit/94a77ed796c43c58e50f409a9a5f87e61b9d2e27))
+
 # 1.0.0-next.1 (2026-03-12)
 
 ### Bug Fixes
