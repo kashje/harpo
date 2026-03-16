@@ -124,7 +124,9 @@ export const getCreatorFingerprint = (
   const dayBucket = date !== undefined ? date.toISOString().slice(0, 10) : null;
 
   const raw =
-    dayBucket !== null ? `${ip}|${userAgent}|${dayBucket}` : `${ip}|${userAgent}`;
+    dayBucket !== null
+      ? `${ip}|${userAgent}|${dayBucket}`
+      : `${ip}|${userAgent}`;
   const hmac = createHmac("sha256", salt);
   hmac.update(raw, "utf8");
 

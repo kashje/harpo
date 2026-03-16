@@ -7,7 +7,6 @@ import { env } from "@/env";
  * update.
  */
 const globalForRedis = globalThis as unknown as {
-  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
   redis: Redis | undefined;
 };
 
