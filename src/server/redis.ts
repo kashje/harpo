@@ -1,0 +1,19 @@
+import Redis from "ioredis";
+
+import { env } from "@/env";
+
+/**
+ * Cache the Redis connection in development. This avoids creating a new connection on every HMR
+ * update.
+ */
+const globalForRedis = globalThis as unknown as {
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
+  redis: Redis | undefined;
+};
+
+const redis =
+  globalForRedis.redis ??
+  new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
+if (env.NODE_ENV !== "production") globalForRedis.redis = redis;
+
+export { redis };
