@@ -1,4 +1,11 @@
+# Production / self-hosting: app (prod image). Database and Redis are in compose.yml.
+# Use with: docker compose -f compose.yml -f compose.prod.yml up -d
+# Set DATABASE_URL (e.g. postgresql://harpo:harpo@database:5432/harpo) and
+# REDIS_URL (e.g redis://redis:6379) in .env
+
 services:
   app:
     build:
       target: prod
+    ports:
+      - ${APP_PORT:-3000}:3000

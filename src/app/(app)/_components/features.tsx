@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  Lock,
-  Timer,
-  Eye,
-  Fingerprint,
-  Zap,
-  HardDrive,
-} from "lucide-react";
+import { Lock, Timer, Eye, Fingerprint, Zap, HardDrive } from "lucide-react";
 
 const features = [
   {

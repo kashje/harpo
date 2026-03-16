@@ -8,11 +8,14 @@ export const env = createEnv({
    */
   server: {
     DATABASE_URL: z.string().url(),
+    REDIS_URL: z.string().url(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
     URL_ID_ENC_KEY: z.string().min(1),
     CREATOR_FINGERPRINT_SALT: z.string().min(1),
+    RATE_LIMIT_AMOUNT: z.coerce.number().int().positive(),
+    RATE_LIMIT_TIME: z.coerce.number().int().positive(),
   },
 
   /**
@@ -30,9 +33,12 @@ export const env = createEnv({
    */
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
+    REDIS_URL: process.env.REDIS_URL,
     NODE_ENV: process.env.NODE_ENV,
     URL_ID_ENC_KEY: process.env.URL_ID_ENC_KEY,
     CREATOR_FINGERPRINT_SALT: process.env.CREATOR_FINGERPRINT_SALT,
+    RATE_LIMIT_AMOUNT: process.env.RATE_LIMIT_AMOUNT,
+    RATE_LIMIT_TIME: process.env.RATE_LIMIT_TIME,
     NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS: parseInt(
       process.env.NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS ?? "60",
     ),

@@ -37,8 +37,17 @@ The following types are used in this repository:
 - `style`: a change to the code style (e.g. formatting, missing semi-colons, etc.)
 - `chore`: a change to the repository that does not fit into any of the above categories
 
-Before you create a Pull Request, please check whether your commits comply with
-the commit conventions used in this repository.
+Before creating a Pull Request, please check wether your commits comply with the commit conventions used in this repository.
+The commit message convention is based on the [Angular Commit Message Guidelines](https://github.com/angular/angular/blob/22b96b9/CONTRIBUTING.md#-commit-message-guidelines).
+
+## Releases
+
+Releases are created automatically by [semantic-release](https://github.com/semantic-release/semantic-release) from conventional commits:
+
+- **Merge to `next`** — Creates a prerelease (e.g. `v0.1.0-next.0`) and publishes a Docker image tagged `:next`.
+- **Merge to `main`** — Creates a stable release (e.g. `v0.1.0`) and publishes a Docker image tagged `:latest` and with the version tag.
+
+Only commits that affect the release (e.g. `feat:`, `fix:`) will trigger a new version.
 
 ## Testing
 
@@ -68,6 +77,32 @@ Integration tests require a test database and a valid `.env.test` (see `.env.tes
 
 To stop the test database: `pnpm test:db:down`.
 
-Before creating a Pull Request, please check wether your commits comply with the commit conventions used in this repository.
+## Testing production build
 
-The commit message convention is based on the [Angular Commit Message Guidelines](https://github.com/angular/angular/blob/22b96b9/CONTRIBUTING.md#-commit-message-guidelines).
+### Building the prod image
+
+To build a production image, run:
+
+```bash
+docker build --target prod -t harpo:prod .
+```
+
+### Test the prod image with the test database
+
+To run the production image against the test Postgres from `compose.test.yml`:
+
+1. Start the test DB: `docker compose -f compose.test.yml up -d`
+2. Find the compose network name: `docker network ls` (e.g. `harpo_default`)
+3. Run the image on that network (use `test-db:5432` from inside the network):
+
+   ```bash
+   docker run --rm -p 3000:3000 --network harpo_default \
+     -e DATABASE_URL=postgresql://harpo:harpo@test-db:5432/harpo_test \
+     -e URL_ID_ENC_KEY=your-key -e CREATOR_FINGERPRINT_SALT=your-salt \
+     -e NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS=60 \
+     harpo:prod
+   ```
+
+   Replace `harpo_default` with your project’s network name if different.
+
+Migrations will run automatically on startup. Open http://localhost:3000 to see the app.

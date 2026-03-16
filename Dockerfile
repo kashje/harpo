@@ -13,25 +13,28 @@ RUN npm install -g corepack@latest && \
 # Next.js collects anonymous telemetry data.
 # Learn more here: https://nextjs.org/telemetry
 # Disable telemetry on the following line, remove it if you want to enable telemetry.
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXT_TELEMETRY_DISABLED=1
 
 # Dev image
 FROM base AS dev
 
 EXPOSE 3000
-ENV PORT 3000
-ENV HOSTNAME localhost
+ENV PORT=3000
+ENV HOSTNAME=localhost
 
 CMD ["sh", "-c", "pnpm dev"]
 
-FROM base as builder
+FROM base AS builder
+
+ENV CI=true
+ENV SKIP_ENV_VALIDATION=1
 
 COPY --link pnpm-lock.yaml ./
-RUN pnpm fetch --prod
+RUN pnpm fetch
 
 COPY --link . .
 
-RUN pnpm install --frozen-lockfile --offline --prod && \
+RUN pnpm install --frozen-lockfile --offline && \
     pnpm build
 
 # Prod image
@@ -39,12 +42,12 @@ FROM node_upstream AS prod
 
 WORKDIR /srv/app
 
-ENV NODE_ENV production
+ENV NODE_ENV=production
 # Delete following line in case you want to enable telemetry.
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN addgroup --gid 1001 nodejs; \
-    adduser --uid 1001 nextjs
+RUN addgroup --gid 1999 nodejs; \
+    adduser -D -u 1999 -G nodejs nextjs
 
 COPY --from=builder --link /srv/app/public ./public
 
@@ -54,12 +57,27 @@ RUN mkdir .next; \
 
 # Automatically leverage output traces to reduce image size
 # https://nextjs.org/docs/advanced-features/output-file-tracing
-COPY --from=builder --link --chown=1001:1001 /srv/app/.next/standalone ./
-COPY --from=builder --link --chown=1001:1001 /srv/app/.next/static ./.next/static
+COPY --from=builder --link --chown=1999:1999 /srv/app/.next/standalone ./
+COPY --from=builder --link --chown=1999:1999 /srv/app/.next/static ./.next/static
+
+# Copy migration script dependencies
+RUN mkdir -p node_modules
+COPY --from=builder --chown=1999:1999 /srv/app/node_modules/postgres ./node_modules/postgres
+COPY --from=builder --chown=1999:1999 /srv/app/node_modules/drizzle-orm ./node_modules/drizzle-orm
+
+# Migration files (run migrations at container start when DATABASE_URL is set)
+COPY --link drizzle ./drizzle
+COPY --link scripts/docker-migrate.mjs ./scripts/
+
+COPY --link scripts/docker-entrypoint.sh ./scripts/
+RUN chmod +x ./scripts/docker-entrypoint.sh
+
+RUN chown -R nextjs:nodejs /srv/app
 
 USER nextjs
 
 EXPOSE 3000
-ENV HOSTNAME "0.0.0.0"
+ENV HOSTNAME="0.0.0.0"
 
+ENTRYPOINT ["/srv/app/scripts/docker-entrypoint.sh"]
 CMD ["node", "server.js"]

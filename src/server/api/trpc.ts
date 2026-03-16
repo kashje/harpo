@@ -11,6 +11,8 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 
 import { db } from "@/server/db";
+import { checkRateLimit } from "@/server/api/utils/rateLimit";
+import { getCreatorFingerprint } from "@/server/api/utils/secret";
 
 /**
  * 1. CONTEXT
@@ -74,6 +76,19 @@ export const createCallerFactory = t.createCallerFactory;
 export const createTRPCRouter = t.router;
 
 /**
+ * Middleware for rate limiting by IP + User-Agent. Uses Redis and throws TOO_MANY_REQUESTS when
+ * the client exceeds RATE_LIMIT_AMOUNT requests per RATE_LIMIT_TIME seconds.
+ */
+const rateLimitMiddleware = t.middleware(async ({ next, ctx }) => {
+  const ipHeader = ctx.headers.get("x-forwarded-for");
+  const ip = ipHeader?.split(",")[0]?.trim() ?? "";
+  const userAgent = ctx.headers.get("user-agent") ?? "";
+  const identifier = getCreatorFingerprint({ ip, userAgent });
+  await checkRateLimit(identifier);
+  return next({ ctx });
+});
+
+/**
  * Middleware for timing procedure execution and adding an artificial delay in development.
  *
  * You can remove this if you don't like it, but it can help catch unwanted waterfalls by simulating
@@ -103,4 +118,6 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
  * guarantee that a user querying is authorized, but you can still access user session data if they
  * are logged in.
  */
-export const publicProcedure = t.procedure.use(timingMiddleware);
+export const publicProcedure = t.procedure
+  .use(rateLimitMiddleware)
+  .use(timingMiddleware);
