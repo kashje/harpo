@@ -13,6 +13,9 @@ Create a `.env` file in the same directory as the compose files (or pass env ano
 | Variable                                  | Description                                                                                                               |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                            | PostgreSQL connection string. Use `postgresql://harpo:harpo@database:5432/harpo` when using the compose database service. |
+| `REDIS_URL`                               | Redis connection string. Use `redis://redis:6379` when using the compose Redis service.                                   |
+| `RATE_LIMIT_AMOUNT`                       | Number of requests per time window (default: 60)                                                                          |
+| `RATE_LIMIT_TIME`                         | Time window in seconds (default: 60)                                                                                      |
 | `URL_ID_ENC_KEY`                          | Secret key for encrypting/decrypting share URLs (e.g. `openssl rand -base64 32`)                                          |
 | `CREATOR_FINGERPRINT_SALT`                | Salt for creator fingerprinting (min 1 character)                                                                         |
 | `NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS` | Seconds a revealed secret is visible before destruction (default: 60)                                                     |
@@ -28,7 +31,7 @@ docker run -it --rm --name harpo -p 3000:3000 \
    -e DATABASE_URL=postgresql://harpo:harpo@database:5432/harpo \
    -e URL_ID_ENC_KEY=your-base64-encoded-key -e CREATOR_FINGERPRINT_SALT=your-base64-encoded-salt \
    -e NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS=60 \
-   ghcr.io/v1byte/harpo:latest
+   ghcr.io/kashje/harpo:latest
 ```
 
 Or with an environment file:
@@ -36,13 +39,14 @@ Or with an environment file:
 ```bash
 docker run -it --rm --name harpo -p 3000:3000 \
    --env-file .env \
-   ghcr.io/v1byte/harpo:latest
+   ghcr.io/kashje/harpo:latest
 ```
 
 ## Run with Docker Compose
 
 1. **Create `.env`** (e.g. copy from `.env.example`) and set at least:
    - `DATABASE_URL=postgresql://harpo:harpo@database:5432/harpo` (if using the compose database)
+   - `REDIS_URL=redis://redis:6379` (if using the compose Redis)
    - `URL_ID_ENC_KEY` and `CREATOR_FINGERPRINT_SALT` to secure random values
 
    If you want you can set the optional variables:
@@ -54,8 +58,10 @@ docker run -it --rm --name harpo -p 3000:3000 \
    | `POSTGRES_DB`       | Database name           | harpo   |
    | `POSTGRES_USER`     | Database user           | harpo   |
    | `POSTGRES_PASSWORD` | Database password       | harpo   |
+   | `REDIS_VERSION`     | Redis image tag         | 7       |
+   | `REDIS_PORT`        | Redis host port         | 6379    |
 
-2. **Start the stack** (app + database):
+2. **Start the stack** (app + database + Redis):
 
    ```bash
    docker compose -f compose.yml -f compose.prod.yml up -d
@@ -67,5 +73,6 @@ docker run -it --rm --name harpo -p 3000:3000 \
 
 ## Compose files overview
 
-- **compose.yml** — Base: app service and `DATABASE_URL`.
-- **compose.prod.yml** — Production: build app with Docker target `prod`, add Postgres, and wire app to the database. Use together: `docker compose -f compose.yml -f compose.prod.yml up -d`.
+- **compose.yml** — Base: app (with `DATABASE_URL`, `REDIS_URL`), Postgres, and Redis. Shared by dev and prod.
+- **compose.override.yml** — Development: build app with target `dev`, mount source, add Drizzle Studio. Use with: `docker compose -f compose.yml -f compose.override.yml up -d`.
+- **compose.prod.yml** — Production: build app with Docker target `prod`. Use with: `docker compose -f compose.yml -f compose.prod.yml up -d`.

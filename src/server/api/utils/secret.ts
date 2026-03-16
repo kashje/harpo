@@ -119,10 +119,14 @@ export const getCreatorFingerprint = (
     throw new Error("CREATOR_FINGERPRINT_SALT must be set");
   }
 
-  const { ip = "", userAgent = "", date = new Date() } = input;
-  const dayBucket = date.toISOString().slice(0, 10);
+  const { ip = "", userAgent = "" } = input;
+  const date = input.date;
+  const dayBucket = date !== undefined ? date.toISOString().slice(0, 10) : null;
 
-  const raw = `${ip}|${userAgent}|${dayBucket}`;
+  const raw =
+    dayBucket !== null
+      ? `${ip}|${userAgent}|${dayBucket}`
+      : `${ip}|${userAgent}`;
   const hmac = createHmac("sha256", salt);
   hmac.update(raw, "utf8");
 

@@ -7,30 +7,6 @@ services:
     ports:
       - ${APP_PORT:-3000}:3000
 
-  database:
-    image: postgres:${POSTGRES_VERSION:-17}-alpine
-    environment:
-      - POSTGRES_DB=${POSTGRES_DB:-harpo}
-      - POSTGRES_USER=${POSTGRES_USER:-harpo}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-harpo}
-    ports:
-      - ${POSTGRES_PORT:-5432}:5432
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "pg_isready",
-          "-d",
-          "${POSTGRES_DB:-harpo}",
-          "-U",
-          "${POSTGRES_USER:-harpo}",
-        ]
-      timeout: 5s
-      retries: 5
-      start_period: 60s
-    volumes:
-      - db_data:/var/lib/postgresql/data:rw
-
   studio:
     image: node:${NODE_VERSION:-20}-alpine
     working_dir: /app
@@ -44,6 +20,3 @@ services:
       - ${STUDIO_PORT:-4983}:4983
     depends_on:
       - database
-
-volumes:
-  db_data:
