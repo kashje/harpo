@@ -1,0 +1,55 @@
+name: "Bug report"
+description: Report an issue
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Thank you for taking the time to create a bug report. Before submitting, please search open/closed issues to see if the issue has already been reported/addressed.
+
+  - type: textarea
+    id: bug-description
+    attributes:
+      label: Describe the bug
+      description: A clear description of the bug and what you expected to happen. If you are submitting a PR for this issue, please include the changes you made and the reason for the changes in the description.
+      placeholder: Bug description
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: A step-by-step description of how to reproduce the bug. If you are not sure how to reproduce the bug, please describe what you did and what you expected to happen.
+      placeholder: |
+        1. Create a new share '...'
+        2. Share the link '....' (don't paste the real link)
+        3. View the share '....'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "If your application displayed any logs, please include them here."
+      render: bash
+
+  - type: textarea
+    id: system-info
+    attributes:
+      label: System Info
+      description: Information about browsers, system or binaries that's relevant.
+      render: bash
+      placeholder: System, Browser, etc.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Before submitting
+      description: By submitting this issue, you agree to follow our [Contributing Guidelines](https://github.com/kashje/harpo/blob/main/docs/CONTRIBUTING.md).
+      options:
+        - label: I've searched for existing issues & read the documentation
+          required: true

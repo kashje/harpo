@@ -1,0 +1,36 @@
+name: "Feature Request"
+description: Create a new feature request
+title: "[feature]: "
+labels: ["request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Thank you for taking the time to create a feature request. Before submitting, please search open/closed issues to see if the feature has already been requested/implemented.
+
+  - type: textarea
+    id: feature-description
+    attributes:
+      label: Feature Description
+      description: Describe the feature you want to see in the application.
+      placeholder: "I think this feature would be great because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context (optional)
+      description: Add any other context about the feature you want to see in the application.
+      placeholder: screenshots, links, etc.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Before submitting
+      description: By submitting this issue, you agree to follow our [Contributing Guidelines](https://github.com/kashje/harpo/blob/main/docs/CONTRIBUTING.md).
+      options:
+        - label: I've searched for existing feature requests & read the documentation
+          required: true
