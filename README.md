@@ -52,6 +52,8 @@ cp .env.example .env
 | ----------------------------------------- | --------------------------------------------------------------------------------- |
 | `DATABASE_URL`                            | PostgreSQL connection string (e.g. `postgresql://user:pass@localhost:5432/harpo`) |
 | `REDIS_URL`                               | Redis connection string (e.g. `redis://localhost:6379`)                           |
+| `RATE_LIMIT_AMOUNT`                       | Number of requests per time window (default: 60)                                  |
+| `RATE_LIMIT_TIME`                         | Time window in seconds (default: 60)                                              |
 | `URL_ID_ENC_KEY`                          | Secret key used to encrypt/decrypt share URLs (min 1 character)                   |
 | `CREATOR_FINGERPRINT_SALT`                | Salt for creator fingerprinting (min 1 character)                                 |
 | `NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS` | Seconds a revealed secret is visible before destruction (default: 60)             |

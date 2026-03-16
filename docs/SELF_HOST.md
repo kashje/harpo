@@ -13,6 +13,9 @@ Create a `.env` file in the same directory as the compose files (or pass env ano
 | Variable                                  | Description                                                                                                               |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                            | PostgreSQL connection string. Use `postgresql://harpo:harpo@database:5432/harpo` when using the compose database service. |
+| `REDIS_URL`                               | Redis connection string. Use `redis://redis:6379` when using the compose Redis service.                                   |
+| `RATE_LIMIT_AMOUNT`                       | Number of requests per time window (default: 60)                                                                          |
+| `RATE_LIMIT_TIME`                         | Time window in seconds (default: 60)                                                                                      |
 | `URL_ID_ENC_KEY`                          | Secret key for encrypting/decrypting share URLs (e.g. `openssl rand -base64 32`)                                          |
 | `CREATOR_FINGERPRINT_SALT`                | Salt for creator fingerprinting (min 1 character)                                                                         |
 | `NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS` | Seconds a revealed secret is visible before destruction (default: 60)                                                     |
