@@ -1,3 +1,10 @@
+# [1.0.0-next.3](https://github.com/kashje/harpo/compare/v1.0.0-next.2...v1.0.0-next.3) (2026-03-16)
+
+
+### Features
+
+* Add issue report button ([26fe552](https://github.com/kashje/harpo/commit/26fe55238516973a0b9f32e85dbaa39472d2d121))
+
 # [1.0.0-next.2](https://github.com/kashje/harpo/compare/v1.0.0-next.1...v1.0.0-next.2) (2026-03-16)
 
 
