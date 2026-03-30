@@ -51,15 +51,18 @@ docker run -it --rm --name harpo -p 3000:3000 \
 
    If you want you can set the optional variables:
 
-   | Variable            | Description             | Default |
-   | ------------------- | ----------------------- | ------- |
-   | `APP_PORT`          | Port the app listens on | 3000    |
-   | `POSTGRES_VERSION`  | Postgres image tag      | 17      |
-   | `POSTGRES_DB`       | Database name           | harpo   |
-   | `POSTGRES_USER`     | Database user           | harpo   |
-   | `POSTGRES_PASSWORD` | Database password       | harpo   |
-   | `REDIS_VERSION`     | Redis image tag         | 7       |
-   | `REDIS_PORT`        | Redis host port         | 6379    |
+   | Variable                | Description                  | Default            |
+   | ----------------------- | ---------------------------- | ------------------ |
+   | `APP_PORT`              | Port the app listens on      | 3000               |
+   | `POSTGRES_VERSION`      | Postgres image tag           | 17                 |
+   | `POSTGRES_DB`           | Database name                | harpo              |
+   | `POSTGRES_USER`         | Database user                | harpo              |
+   | `POSTGRES_PASSWORD`     | Database password            | harpo              |
+   | `REDIS_VERSION`         | Redis image tag              | 7                  |
+   | `REDIS_PORT`            | Redis host port              | 6379               |
+   | `STORAGE_ADAPTER`       | Storage adapter              | local              |
+   | `STORAGE_BASE_PATH`     | Storage base path            | /tmp/harpo-storage |
+   | `MAX_UPLOAD_SIZE_BYTES` | Maximum upload size in bytes | 104857600          |
 
 2. **Start the stack** (app + database + Redis):
 
