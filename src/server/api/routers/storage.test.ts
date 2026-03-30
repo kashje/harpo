@@ -14,7 +14,10 @@ type UploadOverrides = {
   passphrase?: string;
 };
 
-async function makeUploadInput(content = "test file content", overrides?: UploadOverrides) {
+async function makeUploadInput(
+  content = "test file content",
+  overrides?: UploadOverrides,
+) {
   const key = await generateAesKey();
   const file = new File([content], "test-file.txt", { type: "text/plain" });
   const { encryptedBytes, iv } = await encryptFile({ file, key });
