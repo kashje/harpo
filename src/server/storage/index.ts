@@ -7,7 +7,6 @@ export function createStorageAdapter(): StorageAdapter {
   const driver = env.STORAGE_ADAPTER;
 
   const factories: Record<Adapter, () => StorageAdapter> = {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     local: () => new LocalStorageAdapter(env.STORAGE_BASE_PATH),
   };
 
