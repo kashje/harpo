@@ -6,12 +6,14 @@ import { TRPCError } from "@trpc/server";
 import { env } from "@/env";
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
 import { secrets } from "@/server/db/schemas/secrets";
+import { createStorageAdapter } from "@/server/storage";
 import {
   decodeSecretIdToken,
   encodeSecretIdToken,
   getCreatorFingerprint,
   validateSecret,
 } from "../utils/secret";
+import type { SecretPayload } from "@/types";
 
 const GetSecretSchema = z.object({
   id: z.string().min(1),
@@ -59,7 +61,6 @@ export const secretRouter = createTRPCRouter({
         encryptedPayload: secrets.encryptedPayload,
         viewCount: secrets.viewCount,
         maxViews: secrets.maxViews,
-        fileType: secrets.fileType,
         expiresAt: secrets.expiresAt,
         taggedDeletionAt: secrets.taggedDeletionAt,
         passwordHash: secrets.passwordHash,
@@ -138,6 +139,7 @@ export const secretRouter = createTRPCRouter({
       const row = await ctx.db
         .select({
           id: secrets.id,
+          encryptedPayload: secrets.encryptedPayload,
           viewCount: secrets.viewCount,
           maxViews: secrets.maxViews,
           expiresAt: secrets.expiresAt,
@@ -158,7 +160,20 @@ export const secretRouter = createTRPCRouter({
 
       const nextViewCount = row.viewCount + 1;
       if (row.maxViews >= 1 && nextViewCount >= row.maxViews) {
+        const encryptedPayload = JSON.parse(
+          row.encryptedPayload,
+        ) as SecretPayload;
         await ctx.db.delete(secrets).where(eq(secrets.id, input.id));
+        if (encryptedPayload.type === "file") {
+          try {
+            await createStorageAdapter().delete(`secrets/${row.id}/file`);
+          } catch (err) {
+            console.error(
+              "[secret.consume] Failed to delete storage file:",
+              err,
+            );
+          }
+        }
         return {
           deleted: true as const,
           viewCount: nextViewCount,
@@ -253,6 +268,7 @@ export const secretRouter = createTRPCRouter({
       const encryptedPayload = JSON.stringify({
         version: input.encrypted.version,
         ciphertext: input.encrypted.ciphertext,
+        type: "text",
         iv: input.encrypted.iv,
       });
 

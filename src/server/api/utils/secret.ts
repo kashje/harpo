@@ -11,17 +11,32 @@ import { eq } from "drizzle-orm";
 import { env } from "@/env";
 import { db } from "@/server/db";
 import { secrets } from "@/server/db/schemas/secrets";
+import { createStorageAdapter } from "@/server/storage";
 import type { Secret } from "@/types";
+
+async function deleteSecretWithStorage(
+  id: string,
+  storagePath?: string | null,
+): Promise<void> {
+  await db.delete(secrets).where(eq(secrets.id, id));
+  if (storagePath) {
+    try {
+      await createStorageAdapter().delete(storagePath);
+    } catch (err) {
+      console.error("[validateSecret] Failed to delete storage file:", err);
+    }
+  }
+}
 
 export async function validateSecret(
   secret: Pick<
     NonNullable<Secret>,
     "id" | "viewCount" | "maxViews" | "expiresAt"
-  >,
+  > & { storagePath?: string | null },
 ) {
   const now = Date.now();
   if (secret.expiresAt.getTime() <= now) {
-    await db.delete(secrets).where(eq(secrets.id, secret.id));
+    await deleteSecretWithStorage(secret.id, secret.storagePath);
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Secret is expired",
@@ -30,7 +45,7 @@ export async function validateSecret(
 
   const hasViewLimit = secret.maxViews >= 1;
   if (hasViewLimit && secret.viewCount >= secret.maxViews) {
-    await db.delete(secrets).where(eq(secrets.id, secret.id));
+    await deleteSecretWithStorage(secret.id, secret.storagePath);
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Secret has reached the maximum amount of views",

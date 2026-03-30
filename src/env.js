@@ -16,6 +16,13 @@ export const env = createEnv({
     CREATOR_FINGERPRINT_SALT: z.string().min(1),
     RATE_LIMIT_AMOUNT: z.coerce.number().int().positive(),
     RATE_LIMIT_TIME: z.coerce.number().int().positive(),
+    STORAGE_ADAPTER: z.enum(["local", "s3"]).default("local"),
+    STORAGE_BASE_PATH: z.string().default("/tmp/harpo-storage"),
+    MAX_UPLOAD_SIZE_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(104857600),
   },
 
   /**
@@ -42,6 +49,9 @@ export const env = createEnv({
     NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS: parseInt(
       process.env.NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS ?? "60",
     ),
+    STORAGE_ADAPTER: process.env.STORAGE_ADAPTER,
+    STORAGE_BASE_PATH: process.env.STORAGE_BASE_PATH,
+    MAX_UPLOAD_SIZE_BYTES: process.env.MAX_UPLOAD_SIZE_BYTES,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially
