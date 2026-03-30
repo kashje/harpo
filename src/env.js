@@ -17,7 +17,7 @@ export const env = createEnv({
     RATE_LIMIT_AMOUNT: z.coerce.number().int().positive(),
     RATE_LIMIT_TIME: z.coerce.number().int().positive(),
     STORAGE_ADAPTER: z.enum(["local", "s3"]).default("local"),
-    STORAGE_BASE_PATH: z.string().default("/data/storage"),
+    STORAGE_BASE_PATH: z.string().default("/tmp/harpo-storage"),
     MAX_UPLOAD_SIZE_BYTES: z.coerce
       .number()
       .int()
