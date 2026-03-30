@@ -1,5 +1,5 @@
 {
-  "id": "8b00c239-8405-4466-876c-65e0cacbb467",
+  "id": "0b614258-eb54-487e-aef1-a636744e92c9",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -47,16 +47,15 @@
           "notNull": true,
           "default": 1
         },
-        "file_type": {
-          "name": "file_type",
-          "type": "file_type",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
         "password_hash": {
           "name": "password_hash",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "taggedDeletionAt": {
+          "name": "taggedDeletionAt",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
@@ -90,19 +89,7 @@
       "isRLSEnabled": false
     }
   },
-  "enums": {
-    "public.file_type": {
-      "name": "file_type",
-      "schema": "public",
-      "values": [
-        "image",
-        "video",
-        "audio",
-        "document",
-        "other"
-      ]
-    }
-  },
+  "enums": {},
   "schemas": {},
   "sequences": {},
   "roles": {},

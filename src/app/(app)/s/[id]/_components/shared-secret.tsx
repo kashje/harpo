@@ -24,57 +24,38 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import type { Secret } from "@/types";
+import type { Secret, SecretPayload } from "@/types";
 import { env } from "@/env";
 import {
   decryptText,
+  decryptFile,
   importAesKey,
+  base64urlDecodeBytes,
   type EncryptedPayload,
+  type EncryptedFilePayload,
 } from "@/lib/secret-crypto";
 
-function fileExtensionFromType(fileType: string | null) {
-  switch (fileType) {
-    case "image":
-      return "png";
-    case "video":
-      return "mp4";
-    case "audio":
-      return "mp3";
-    case "document":
-      return "txt";
-    default:
-      return "bin";
-  }
-}
-
-async function downloadPayloadAsFile(opts: {
-  payload: string;
-  suggestedName: string;
-  fileType: string | null;
+async function triggerFileDownload(opts: {
+  encryptedBytesB64: string;
+  encryptedPayload: string;
+  keyBase64url: string;
 }) {
-  const ext = fileExtensionFromType(opts.fileType);
-  const baseName =
-    opts.suggestedName.trim().length > 0 ? opts.suggestedName : "secret";
-  const filename = `${baseName}.${ext}`;
+  const metadata = JSON.parse(opts.encryptedPayload) as EncryptedFilePayload;
+  const encryptedBytes = base64urlDecodeBytes(opts.encryptedBytesB64);
+  const iv = base64urlDecodeBytes(metadata.iv);
 
-  const blob = await (async () => {
-    if (opts.payload.startsWith("data:")) {
-      const res = await fetch(opts.payload);
-      return await res.blob();
-    }
+  const key = await importAesKey(opts.keyBase64url);
+  const decryptedBytes = await decryptFile({ encryptedBytes, iv, key });
 
-    // Assume base64 without data URL prefix.
-    const binary = atob(opts.payload);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return new Blob([bytes], { type: "application/octet-stream" });
-  })();
-
+  const blob = new Blob([decryptedBytes.buffer as ArrayBuffer], {
+    type: metadata.mimeType ?? "application/octet-stream",
+  });
   const url = URL.createObjectURL(blob);
+
   try {
     const a = document.createElement("a");
     a.href = url;
-    a.download = filename;
+    a.download = metadata.originalName ?? "secret-file";
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -97,6 +78,7 @@ export function SharedSecret({
 
   const tagDestruction = api.secret.tagDeletion.useMutation();
   const consume = api.secret.consume.useMutation();
+  const downloadFile = api.storage.download.useMutation();
 
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -123,7 +105,10 @@ export function SharedSecret({
     }
   }, [data?.expiresAt]);
 
-  const isFile = !!data?.fileType;
+  const encryptedPayload = JSON.parse(
+    data?.encryptedPayload ?? "{}",
+  ) as SecretPayload;
+  const isFile = encryptedPayload.type === "file";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -267,14 +252,24 @@ export function SharedSecret({
 
   const handleDownload = useCallback(async () => {
     if (!data?.encryptedPayload) return;
-    try {
-      const res = await consume.mutateAsync({ id: secret.id });
-      if (!res.viewCount) return;
-      await downloadPayloadAsFile({
-        payload: data.encryptedPayload,
-        suggestedName: data.name,
-        fileType: data.fileType ?? null,
+    if (!keyBase64url) {
+      toast.error("Missing decryption key", {
+        description:
+          "Make sure you opened the full share link including the #key part.",
+        position: "top-center",
+        closeButton: true,
       });
+      return;
+    }
+    try {
+      const { encryptedBytes: encryptedBytesB64 } =
+        await downloadFile.mutateAsync({ idToken: secretIdHash });
+      await triggerFileDownload({
+        encryptedBytesB64,
+        encryptedPayload: data.encryptedPayload,
+        keyBase64url,
+      });
+      await consume.mutateAsync({ id: secret.id });
       await refetch();
     } catch (err) {
       toast.error("Unable to download secret", {
@@ -286,10 +281,11 @@ export function SharedSecret({
     }
   }, [
     consume,
+    downloadFile,
     data?.encryptedPayload,
-    data?.fileType,
-    data?.name,
+    keyBase64url,
     secret.id,
+    secretIdHash,
     refetch,
   ]);
 
@@ -389,7 +385,10 @@ export function SharedSecret({
                 {isFile ? (
                   <>
                     <FileText className="h-4 w-4" />
-                    File payload ({data.fileType})
+                    File payload
+                    {encryptedPayload.type === "file"
+                      ? ` (${encryptedPayload.mimeType})`
+                      : ""}
                   </>
                 ) : (
                   <>

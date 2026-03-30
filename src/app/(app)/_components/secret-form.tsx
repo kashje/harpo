@@ -17,10 +17,10 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Ban,
   Eye,
   EyeOff,
   FileText,
+  FileUp,
   Lock,
   MessageSquareText,
   Sparkles,
@@ -33,6 +33,8 @@ import {
   encryptText,
   exportAesKey,
   hashPassphrase,
+  encryptFile,
+  base64urlEncodeBytes,
 } from "@/lib/secret-crypto";
 import { toast } from "sonner";
 import { GeneratedLinkDialog } from "@/app/(app)/_components/generated-link-dialog";
@@ -79,6 +81,7 @@ export function SecretForm() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const createSharedText = api.secret.create.useMutation();
+  const uploadSecret = api.storage.upload.useMutation();
 
   const form = useForm<SecretFormValues>({
     resolver: zodResolver(formSchema),
@@ -99,27 +102,12 @@ export function SecretForm() {
 
   const isSubmitDisabled =
     form.formState.isSubmitting ||
-    (mode === "text" && !secret) ||
-    !secret?.trim() ||
+    (mode === "text" && !secret?.trim()) ||
     (mode === "file" && (!files || files.length === 0));
 
   const onSubmit = async (values: SecretFormValues) => {
-    if (values.mode !== "text") {
-      toast.error("File upload is not available yet", {
-        description:
-          "Right now only text secrets are supported for secure links.",
-      });
-      return;
-    }
-
     try {
-      const secret = values.secret?.trim() ?? "";
-      if (!secret) {
-        return;
-      }
-
       const key = await generateAesKey();
-      const encrypted = await encryptText({ plaintext: secret, key });
       const keyBase64url = await exportAesKey(key);
 
       const passphraseHash =
@@ -127,25 +115,51 @@ export function SecretForm() {
           ? await hashPassphrase(values.passphrase.trim())
           : undefined;
 
-      const result = await createSharedText.mutateAsync({
-        encrypted,
-        name: values.name,
-        passphrase: passphraseHash,
-        expiresIn: values.expiresIn,
-        maxViews: values.maxViews,
-      });
+      let idToken: string;
+
+      if (values.mode === "text") {
+        const secret = values.secret?.trim() ?? "";
+        if (!secret) return;
+
+        const encrypted = await encryptText({ plaintext: secret, key });
+
+        const result = await createSharedText.mutateAsync({
+          encrypted,
+          name: values.name,
+          passphrase: passphraseHash,
+          expiresIn: values.expiresIn,
+          maxViews: values.maxViews,
+        });
+
+        idToken = result.idToken;
+      } else {
+        const file = values.files?.[0];
+        if (!file) return;
+
+        const { encryptedBytes, iv } = await encryptFile({ file, key });
+
+        const result = await uploadSecret.mutateAsync({
+          encryptedBytes: base64urlEncodeBytes(encryptedBytes),
+          iv: base64urlEncodeBytes(iv),
+          originalName: file.name,
+          mimeType:
+            file.type.length > 0 ? file.type : "application/octet-stream",
+          name: values.name?.trim() ?? undefined,
+          passphrase: passphraseHash,
+          expiresIn: values.expiresIn,
+          maxViews: values.maxViews,
+        });
+
+        idToken = result.idToken;
+      }
 
       const origin =
         typeof window !== "undefined" ? window.location.origin : "";
-
       const link =
-        origin && result.idToken
-          ? `${origin}/s/${result.idToken}#${keyBase64url}`
-          : "";
+        origin && idToken ? `${origin}/s/${idToken}#${keyBase64url}` : "";
 
       setGeneratedLink(link || null);
       setShowGeneratedLink(!!link);
-
       form.reset();
     } catch (error) {
       toast.error("Unable to create secure link", {
@@ -188,18 +202,16 @@ export function SecretForm() {
           <button
             type="button"
             onClick={() => {
-              //setActiveTab("file");
-              //form.setValue("mode", "file", { shouldValidate: true });
+              setActiveTab("file");
+              form.setValue("mode", "file", { shouldValidate: true });
             }}
-            disabled={true}
             className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
               activeTab === "file"
                 ? "bg-background text-foreground shadow-lg"
                 : "text-muted-foreground hover:text-foreground disabled:hover:text-muted-foreground"
             }`}
           >
-            <Ban className="h-4 w-4" />
-            {/* <FileUp className="h-4 w-4" /> */}
+            <FileUp className="h-4 w-4" />
             File <span className="hidden md:inline">Upload</span>
           </button>
         </div>
@@ -307,6 +319,9 @@ export function SecretForm() {
                                   e.target.files,
                                 );
                                 field.onChange(selectedFiles);
+                                form.setValue("files", selectedFiles, {
+                                  shouldValidate: true,
+                                });
                               }
                             }}
                             className="hidden"
@@ -502,10 +517,18 @@ export function SecretForm() {
             type="submit"
             size="lg"
             className="h-12 w-full font-bold transition-all hover:opacity-80"
-            disabled={isSubmitDisabled || createSharedText.isPending}
+            disabled={
+              isSubmitDisabled ||
+              createSharedText.isPending ||
+              uploadSecret.isPending
+            }
           >
             <Lock className="h-4 w-4" />
-            Generate Secure Link
+            {createSharedText.isPending
+              ? "Creating..."
+              : uploadSecret.isPending
+                ? "Uploading…"
+                : "Generate Secure Link"}
           </Button>
         </form>
       </div>

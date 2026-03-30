@@ -109,6 +109,78 @@ export const decryptText = async (params: {
   return decoder.decode(plaintextBytes);
 };
 
+export type EncryptedFilePayload = {
+  iv: string;
+  version: "v1";
+  type: "file";
+  originalName: string;
+  mimeType: string;
+};
+
+export const encryptFile = async (params: {
+  file: File;
+  key: CryptoKey;
+}): Promise<{ encryptedBytes: Uint8Array; iv: Uint8Array }> => {
+  const fileBytes = new Uint8Array(await params.file.arrayBuffer());
+  const ivBytes = crypto.getRandomValues(new Uint8Array(12));
+
+  const encryptedBytes = new Uint8Array(
+    await crypto.subtle.encrypt(
+      {
+        name: "AES-GCM",
+        iv: ivBytes as unknown as BufferSource,
+      },
+      params.key,
+      fileBytes as unknown as BufferSource,
+    ),
+  );
+
+  return { encryptedBytes, iv: ivBytes };
+};
+
+export const decryptFile = async (params: {
+  encryptedBytes: Uint8Array;
+  iv: Uint8Array;
+  key: CryptoKey;
+}): Promise<Uint8Array> => {
+  const decryptedBytes = new Uint8Array(
+    await crypto.subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: params.iv as unknown as BufferSource,
+      },
+      params.key,
+      params.encryptedBytes as unknown as BufferSource,
+    ),
+  );
+
+  return decryptedBytes;
+};
+
+export const base64urlEncodeBytes = (bytes: Uint8Array): string => {
+  let binary = "";
+  // eslint-disable-next-line @typescript-eslint/prefer-for-of
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]!);
+  }
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+};
+
+export const base64urlDecodeBytes = (input: string): Uint8Array => {
+  const padLength = (4 - (input.length % 4)) % 4;
+  const padded =
+    input.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(padLength);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+};
+
 /**
  * Hash a passphrase client-side with SHA-256 (hex).
  * The server only ever receives and stores this hash, never the plaintext.

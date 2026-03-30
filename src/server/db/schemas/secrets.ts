@@ -5,16 +5,7 @@ import {
   text,
   integer,
   timestamp,
-  pgEnum,
 } from "drizzle-orm/pg-core";
-
-export const fileType = pgEnum("file_type", [
-  "image",
-  "video",
-  "audio",
-  "document",
-  "other",
-]);
 
 export const secrets = pgTable("secrets", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -23,7 +14,6 @@ export const secrets = pgTable("secrets", {
   encryptedPayload: text("encrypted_payload").notNull(),
   viewCount: integer("view_count").notNull().default(0),
   maxViews: integer("max_views").notNull().default(1),
-  fileType: fileType("file_type"),
   passwordHash: text("password_hash"),
   taggedDeletionAt: timestamp("taggedDeletionAt"),
   expiresAt: timestamp("expires_at").notNull(),
