@@ -1,3 +1,10 @@
+# [1.1.0-next.1](https://github.com/kashje/harpo/compare/v1.0.0...v1.1.0-next.1) (2026-03-30)
+
+
+### Features
+
+* implement file uploads with local adapter ([c45da01](https://github.com/kashje/harpo/commit/c45da014caa40d015bca4ec3cfc559978ea3adab))
+
 # 1.0.0 (2026-03-16)
 
 
