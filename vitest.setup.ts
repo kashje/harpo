@@ -1,12 +1,13 @@
-import { config } from "dotenv";
 import { vi } from "vitest";
 
-config({ path: ".env.test" });
+process.loadEnvFile(".env.test");
 
 vi.mock("@/server/redis", () => ({
   redis: {
-    incr: vi.fn().mockResolvedValue(1),
-    ttl: vi.fn().mockResolvedValue(-1),
-    expire: vi.fn().mockResolvedValue(1),
+    incr: vi.fn<(key: string) => Promise<number>>().mockResolvedValue(1),
+    ttl: vi.fn<(key: string) => Promise<number>>().mockResolvedValue(-1),
+    expire: vi
+      .fn<(key: string, seconds: number) => Promise<number>>()
+      .mockResolvedValue(1),
   },
 }));
