@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   Download,
   Eye,
@@ -64,6 +64,33 @@ async function triggerFileDownload(opts: {
   }
 }
 
+// The decryption key lives in the URL fragment, which is never sent to the
+// server, so it can only be read on the client.
+function subscribeToHash(onChange: () => void) {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
+}
+
+function getKeyFromHash() {
+  return window.location.hash.slice(1) || null;
+}
+
+function getServerKeyFromHash() {
+  return null;
+}
+
+function formatExpiresAt(expiresAt: Date | undefined) {
+  if (!expiresAt) return null;
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(expiresAt);
+  } catch {
+    return expiresAt.toISOString();
+  }
+}
+
 export function SharedSecret({
   secret,
   secretIdHash,
@@ -84,7 +111,11 @@ export function SharedSecret({
   const [copied, setCopied] = useState(false);
   const [destroyCountdown, setDestroyCountdown] = useState<number | null>(null);
   const [decryptedText, setDecryptedText] = useState<string | null>(null);
-  const [keyBase64url, setKeyBase64url] = useState<string | null>(null);
+  const keyBase64url = useSyncExternalStore(
+    subscribeToHash,
+    getKeyFromHash,
+    getServerKeyFromHash,
+  );
 
   const hasLimitedViews =
     data?.maxViews !== undefined &&
@@ -93,31 +124,14 @@ export function SharedSecret({
   const isLastView =
     !!data && hasLimitedViews && data.viewCount + 1 >= data.maxViews;
 
-  const expiresLabel = useMemo(() => {
-    if (!data?.expiresAt) return null;
-    try {
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(data.expiresAt);
-    } catch {
-      return data.expiresAt.toISOString();
-    }
-  }, [data?.expiresAt]);
+  const expiresLabel = formatExpiresAt(data?.expiresAt);
 
   const encryptedPayload = JSON.parse(
     data?.encryptedPayload ?? "{}",
   ) as SecretPayload;
   const isFile = encryptedPayload.type === "file";
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const hash = window.location.hash ?? "";
-    const value = hash.startsWith("#") ? hash.slice(1) : hash;
-    setKeyBase64url(value || null);
-  }, []);
-
-  const getDecryptedSecret = useCallback(async () => {
+  const getDecryptedSecret = async () => {
     if (!data || isFile) return null;
     if (decryptedText !== null) return decryptedText;
 
@@ -145,9 +159,9 @@ export function SharedSecret({
       });
       return null;
     }
-  }, [data, decryptedText, isFile, keyBase64url]);
+  };
 
-  const handleReveal = useCallback(async () => {
+  const handleReveal = async () => {
     if (revealed) return;
 
     // On the very last allowed view, schedule destruction server-side and then
@@ -196,19 +210,9 @@ export function SharedSecret({
         closeButton: true,
       });
     }
-  }, [
-    tagDestruction,
-    consume,
-    secret.id,
-    data?.expiresAt,
-    getDecryptedSecret,
-    revealed,
-    refetch,
-    isLastView,
-    destroyCountdown,
-  ]);
+  };
 
-  const handleCopy = useCallback(async () => {
+  const handleCopy = async () => {
     if (!data?.encryptedPayload) return;
 
     // If we're already on the last-view countdown, just allow copying without
@@ -239,18 +243,9 @@ export function SharedSecret({
         closeButton: true,
       });
     }
-  }, [
-    consume,
-    data?.encryptedPayload,
-    secret.id,
-    refetch,
-    destroyCountdown,
-    revealed,
-    getDecryptedSecret,
-    isFile,
-  ]);
+  };
 
-  const handleDownload = useCallback(async () => {
+  const handleDownload = async () => {
     if (!data?.encryptedPayload) return;
     if (!keyBase64url) {
       toast.error("Missing decryption key", {
@@ -279,32 +274,24 @@ export function SharedSecret({
         closeButton: true,
       });
     }
-  }, [
-    consume,
-    downloadFile,
-    data?.encryptedPayload,
-    keyBase64url,
-    secret.id,
-    secretIdHash,
-    refetch,
-  ]);
+  };
 
   useEffect(() => {
     if (destroyCountdown === null) return;
 
-    if (destroyCountdown <= 0) {
-      // Countdown finished: the server-side expiry has already been armed, so
-      // just clear local state and refetch.
-      setDestroyCountdown(null);
-      void refetch();
-      return;
-    }
-
-    const id = window.setTimeout(() => {
-      setDestroyCountdown((current) =>
-        current === null ? null : Math.max(current - 1, 0),
-      );
-    }, 1000);
+    const id = window.setTimeout(
+      () => {
+        if (destroyCountdown <= 1) {
+          // Countdown finished: the server-side expiry has already been armed,
+          // so just clear local state and refetch.
+          setDestroyCountdown(null);
+          void refetch();
+          return;
+        }
+        setDestroyCountdown(destroyCountdown - 1);
+      },
+      destroyCountdown > 0 ? 1000 : 0,
+    );
 
     return () => window.clearTimeout(id);
   }, [destroyCountdown, refetch]);
