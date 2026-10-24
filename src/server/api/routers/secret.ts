@@ -51,7 +51,7 @@ const CreatedSecretSchema = z.object({
 export const secretRouter = createTRPCRouter({
   /**
    * Public metadata of a secret. Never returns the content: that only comes from `reveal` (or
-   * `storage.download`), which count a view and check the passphrase.
+   * the file download in `src/server/api/files.ts`), which count a view and check the passphrase.
    */
   get: publicProcedure
     .input(z.object({ idToken: idTokenSchema }))
@@ -59,8 +59,6 @@ export const secretRouter = createTRPCRouter({
       const id = tryDecodeSecretIdToken(input.idToken);
       if (!id) return null;
 
-      // Out of views only happens while the last download of a file is still running; that
-      // download deletes it.
       const row = await readSecret(id);
       if (!row || isSecretUnavailable(row)) return null;
 

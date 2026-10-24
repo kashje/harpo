@@ -107,7 +107,7 @@ describe("secret router", () => {
       expect(stored).not.toContain("correct horse");
       expect(stored).not.toContain(input.passphrase!.authToken);
       expect(stored).not.toContain(deleteToken);
-      expect(row?.version).toBe("v2");
+      expect(row?.version).toBe("v3");
     });
 
     it("rejects content above the size limit", async () => {

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation } from "@tanstack/react-query";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
@@ -28,10 +29,11 @@ import {
   X,
 } from "lucide-react";
 import { api } from "@/trpc/react";
+import { uploadEncryptedFile } from "@/lib/file-transfer";
 import {
   base64urlEncode,
   deriveSecretKeys,
-  encryptBytes,
+  encryptFile,
   encryptMeta,
   encryptText,
   generateLinkKey,
@@ -100,7 +102,7 @@ export function SecretForm({ maxUploadBytes }: { maxUploadBytes: number }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const createSharedText = api.secret.create.useMutation();
-  const uploadSecret = api.storage.upload.useMutation();
+  const uploadSecret = useMutation({ mutationFn: uploadEncryptedFile });
 
   const form = useForm<SecretFormValues>({
     resolver: zodResolver(formSchema),
@@ -178,23 +180,22 @@ export function SecretForm({ maxUploadBytes }: { maxUploadBytes: number }) {
           return;
         }
 
-        const { ciphertext, iv } = await encryptBytes(
-          keys.contentKey,
-          new Uint8Array(await file.arrayBuffer()),
-        );
+        const { ciphertext, iv } = await encryptFile(keys.contentKey, file);
 
         created = await uploadSecret.mutateAsync({
-          encryptedBytes: base64urlEncode(ciphertext),
-          iv: base64urlEncode(iv),
-          meta: await encryptMeta(keys.metaKey, {
-            name: name || undefined,
-            fileName: file.name,
-            mimeType:
-              file.type.length > 0 ? file.type : "application/octet-stream",
-          }),
-          passphrase: passphraseInput,
-          expiresIn: values.expiresIn,
-          maxViews: values.maxViews,
+          metadata: {
+            iv: base64urlEncode(iv),
+            meta: await encryptMeta(keys.metaKey, {
+              name: name || undefined,
+              fileName: file.name,
+              mimeType:
+                file.type.length > 0 ? file.type : "application/octet-stream",
+            }),
+            passphrase: passphraseInput,
+            expiresIn: values.expiresIn,
+            maxViews: values.maxViews,
+          },
+          ciphertext,
         });
       }
 

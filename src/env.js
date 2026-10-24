@@ -25,6 +25,14 @@ export const env = createEnv({
     TRUSTED_PROXY_COUNT: z.coerce.number().int().min(0).default(1),
     STORAGE_ADAPTER: z.enum(["local", "s3"]).default("local"),
     STORAGE_BASE_PATH: z.string().default("/tmp/harpo-storage"),
+    // Only used with STORAGE_ADAPTER=s3; S3_BUCKET is required then (checked in src/server/storage).
+    S3_BUCKET: z.string().optional(),
+    S3_REGION: z.string().default("us-east-1"),
+    S3_ENDPOINT: z.url().optional(),
+    S3_ACCESS_KEY_ID: z.string().optional(),
+    S3_SECRET_ACCESS_KEY: z.string().optional(),
+    S3_FORCE_PATH_STYLE: z.stringbool().default(false),
+    S3_PREFIX: z.string().default(""),
     MAX_UPLOAD_SIZE_BYTES: z.coerce
       .number()
       .int()
@@ -55,6 +63,13 @@ export const env = createEnv({
     TRUSTED_PROXY_COUNT: process.env.TRUSTED_PROXY_COUNT,
     STORAGE_ADAPTER: process.env.STORAGE_ADAPTER,
     STORAGE_BASE_PATH: process.env.STORAGE_BASE_PATH,
+    S3_BUCKET: process.env.S3_BUCKET,
+    S3_REGION: process.env.S3_REGION,
+    S3_ENDPOINT: process.env.S3_ENDPOINT,
+    S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID,
+    S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY,
+    S3_FORCE_PATH_STYLE: process.env.S3_FORCE_PATH_STYLE,
+    S3_PREFIX: process.env.S3_PREFIX,
     MAX_UPLOAD_SIZE_BYTES: process.env.MAX_UPLOAD_SIZE_BYTES,
   },
   /**

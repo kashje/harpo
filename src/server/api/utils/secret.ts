@@ -10,8 +10,12 @@ import {
 
 import { env } from "@/env";
 import { DELETE_TOKEN_BYTES } from "@/lib/secret-options";
-import { deleteSecretRecord } from "@/server/secretStore";
-import { createStorageAdapter } from "@/server/storage";
+import {
+  deleteSecretRecord,
+  isFileDownloading,
+  releaseDownloadLease,
+} from "@/server/secretStore";
+import { getStorageAdapter } from "@/server/storage";
 
 export const SECRET_FILES_PREFIX = "secrets/";
 
@@ -28,17 +32,28 @@ export const secretIdFromFilePath = (path: string): string | null =>
 /** Deletes a secret's stored file. Failures are logged; the sweeper retries them later. */
 export async function deleteSecretFile(id: string): Promise<void> {
   try {
-    await createStorageAdapter().delete(secretFilePath(id));
+    await getStorageAdapter().delete(secretFilePath(id));
   } catch (err) {
     console.error("[deleteSecretFile] Failed to delete storage file:", err);
   }
 }
 
-/** Deletes a secret and, for file secrets, its stored file. No-op if it's already gone. */
+/**
+ * Deletes a secret and, for file secrets, its stored file. No-op if it's already gone. A file that
+ * is being downloaded stays until the last download ends (see `finishDownload`).
+ */
 export async function deleteSecret(id: string): Promise<void> {
-  if ((await deleteSecretRecord(id)) === "file") {
+  if (
+    (await deleteSecretRecord(id)) === "file" &&
+    !(await isFileDownloading(id))
+  ) {
     await deleteSecretFile(id);
   }
+}
+
+/** Ends a download: releases its lease, and deletes the file when nothing needs it anymore. */
+export async function finishDownload(id: string, lease: string): Promise<void> {
+  if (await releaseDownloadLease(id, lease)) await deleteSecretFile(id);
 }
 
 export const isSecretUnavailable = (

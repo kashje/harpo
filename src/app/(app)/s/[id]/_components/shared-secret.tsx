@@ -27,10 +27,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
+import { downloadEncryptedFile } from "@/lib/file-transfer";
 import type { Secret } from "@/types";
 import {
   base64urlDecode,
-  decryptBytes,
+  decryptFile,
   decryptMeta,
   decryptText,
   deriveSecretKeys,
@@ -67,11 +68,8 @@ function formatExpiresAt(expiresAt: Date) {
 const getErrorMessage = (err: unknown, fallback: string) =>
   err instanceof Error && err.message ? err.message : fallback;
 
-function saveFile(bytes: Uint8Array<ArrayBuffer>, meta: SecretMeta | null) {
-  const blob = new Blob([bytes], {
-    type: meta?.mimeType ?? "application/octet-stream",
-  });
-  const url = URL.createObjectURL(blob);
+function saveFile(file: Blob, meta: SecretMeta | null) {
+  const url = URL.createObjectURL(file);
 
   try {
     const a = document.createElement("a");
@@ -93,7 +91,6 @@ export function SharedSecret({
   idToken: string;
 }) {
   const reveal = api.secret.reveal.useMutation();
-  const download = api.storage.download.useMutation();
 
   const linkKey = useSyncExternalStore(
     subscribeToHash,
@@ -112,10 +109,12 @@ export function SharedSecret({
   });
   const [destroyed, setDestroyed] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Covers the whole download, which goes on after the view is known.
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const isFile = secret.type === "file";
   const needsPassphrase = secret.passphrase !== null;
-  const isBusy = reveal.isPending || download.isPending;
+  const isBusy = reveal.isPending || isDownloading;
   const isLastView =
     views.maxViews > 0 && views.viewCount + 1 >= views.maxViews;
 
@@ -205,27 +204,31 @@ export function SharedSecret({
   };
 
   const handleDownload = async () => {
+    setIsDownloading(true);
     try {
       const keys = await getKeys();
-      const result = await download.mutateAsync({
+      const result = await downloadEncryptedFile({
         idToken,
         authToken: keys.authToken ?? undefined,
       });
       setViews({ viewCount: result.viewCount, maxViews: result.maxViews });
       setDestroyed(result.destroyed);
 
-      const bytes = await decryptBytes(
+      const file = await decryptFile(
         keys.contentKey,
-        base64urlDecode(result.encryptedBytes),
+        result.ciphertext,
         base64urlDecode(result.iv),
+        meta?.mimeType ?? "application/octet-stream",
       );
-      saveFile(bytes, meta);
+      saveFile(file, meta);
     } catch (err) {
       toast.error("Unable to download secret", {
         description: getErrorMessage(err, "Download not available"),
         position: "top-center",
         closeButton: true,
       });
+    } finally {
+      setIsDownloading(false);
     }
   };
 
