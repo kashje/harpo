@@ -5,9 +5,13 @@ FROM node_upstream AS base
 
 WORKDIR /srv/app
 
+# Install the pnpm version pinned in package.json ("packageManager"), so builds don't break when a
+# new pnpm major is released.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+COPY --link package.json ./
 RUN npm install -g corepack@latest && \
     corepack enable && \
-    corepack prepare --activate pnpm@latest && \
+    corepack install && \
     pnpm config -g set store-dir /.pnpm-store
 
 # Next.js collects anonymous telemetry data.
@@ -29,6 +33,7 @@ FROM base AS builder
 ENV CI=true
 ENV SKIP_ENV_VALIDATION=1
 
+# package.json (from base) is needed too: the lockfile records its pnpm settings, e.g. overrides.
 COPY --link pnpm-lock.yaml ./
 RUN pnpm fetch
 
