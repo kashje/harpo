@@ -52,11 +52,13 @@ cp .env.example .env
 | ----------------------------------------- | --------------------------------------------------------------------------------- |
 | `DATABASE_URL`                            | PostgreSQL connection string (e.g. `postgresql://user:pass@localhost:5432/harpo`) |
 | `REDIS_URL`                               | Redis connection string (e.g. `redis://localhost:6379`)                           |
-| `RATE_LIMIT_AMOUNT`                       | Number of requests per time window (default: 60)                                  |
-| `RATE_LIMIT_TIME`                         | Time window in seconds (default: 60)                                              |
-| `URL_ID_ENC_KEY`                          | Secret key used to encrypt/decrypt share URLs (min 1 character)                   |
-| `CREATOR_FINGERPRINT_SALT`                | Salt for creator fingerprinting (min 1 character)                                 |
-| `NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS` | Seconds a revealed secret is visible before destruction (default: 60)             |
+| `RATE_LIMIT_AMOUNT`                       | Number of requests per client IP per time window (e.g. 60)                        |
+| `RATE_LIMIT_TIME`                         | Time window in seconds (e.g. 60)                                                  |
+| `CREATE_RATE_LIMIT_AMOUNT`                | Secrets one client IP may create per window (default: 30)                         |
+| `CREATE_RATE_LIMIT_TIME`                  | Window for creating secrets, in seconds (default: 600)                            |
+| `TRUSTED_PROXY_COUNT`                     | Reverse proxies in front of Harpo that append to `X-Forwarded-For` (default: 1)   |
+| `URL_ID_ENC_KEY`                          | 32-byte key encoded as base64 (`openssl rand -base64 32`) to encrypt share URLs   |
+| `CREATOR_FINGERPRINT_SALT`                | Salt for hashing client IPs for rate limiting (min 1 character)                   |
 
 See `src/env.js` for the full schema.
 

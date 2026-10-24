@@ -99,7 +99,6 @@ To run the production image against the test Postgres from `compose.test.yml`:
    docker run --rm -p 3000:3000 --network harpo_default \
      -e DATABASE_URL=postgresql://harpo:harpo@test-db:5432/harpo_test \
      -e URL_ID_ENC_KEY=your-key -e CREATOR_FINGERPRINT_SALT=your-salt \
-     -e NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS=60 \
      harpo:prod
    ```
 
