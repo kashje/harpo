@@ -27,6 +27,14 @@ export class LocalStorageAdapter implements StorageAdapter {
     return Readable.from(readStream);
   }
   async delete(path: string): Promise<void> {
-    await fs.unlink(join(this.basePath, path));
+    const fullPath = join(this.basePath, path);
+    try {
+      await fs.unlink(fullPath);
+    } catch (err) {
+      // Already gone is fine: deletion can race between a last view and the sweeper.
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
+    // Remove the per-secret directory too; fails harmlessly if it isn't empty or already gone.
+    await fs.rmdir(dirname(fullPath)).catch(() => undefined);
   }
 }

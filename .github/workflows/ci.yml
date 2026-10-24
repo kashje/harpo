@@ -80,7 +80,6 @@ jobs:
           RATE_LIMIT_TIME=60
           URL_ID_ENC_KEY=${{ secrets.URL_ID_ENC_KEY }}
           CREATOR_FINGERPRINT_SALT=ci-test-salt
-          NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS=5
           EOF
 
       - name: Run migrations

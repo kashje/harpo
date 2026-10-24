@@ -2,12 +2,12 @@ import { vi } from "vitest";
 
 process.loadEnvFile(".env.test");
 
-vi.mock("@/server/redis", () => ({
-  redis: {
-    incr: vi.fn<(key: string) => Promise<number>>().mockResolvedValue(1),
-    ttl: vi.fn<(key: string) => Promise<number>>().mockResolvedValue(-1),
-    expire: vi
-      .fn<(key: string, seconds: number) => Promise<number>>()
+vi.mock("@/server/redis", () => {
+  const redis = {
+    // Rate limit counter script; returning 1 keeps every request under the limit.
+    eval: vi
+      .fn<(...args: (string | number)[]) => Promise<unknown>>()
       .mockResolvedValue(1),
-  },
-}));
+  };
+  return { getRedis: () => redis };
+});

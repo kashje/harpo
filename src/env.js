@@ -12,10 +12,18 @@ export const env = createEnv({
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
-    URL_ID_ENC_KEY: z.string().min(1),
+    URL_ID_ENC_KEY: z
+      .string()
+      .regex(
+        /^[A-Za-z0-9+/]{43}=$/,
+        "URL_ID_ENC_KEY must be a 32-byte key encoded as base64 (openssl rand -base64 32)",
+      ),
     CREATOR_FINGERPRINT_SALT: z.string().min(1),
     RATE_LIMIT_AMOUNT: z.coerce.number().int().positive(),
     RATE_LIMIT_TIME: z.coerce.number().int().positive(),
+    CREATE_RATE_LIMIT_AMOUNT: z.coerce.number().int().positive().default(30),
+    CREATE_RATE_LIMIT_TIME: z.coerce.number().int().positive().default(600),
+    TRUSTED_PROXY_COUNT: z.coerce.number().int().min(0).default(1),
     STORAGE_ADAPTER: z.enum(["local", "s3"]).default("local"),
     STORAGE_BASE_PATH: z.string().default("/tmp/harpo-storage"),
     MAX_UPLOAD_SIZE_BYTES: z.coerce
@@ -30,9 +38,7 @@ export const env = createEnv({
    * isn't built with invalid env vars. To expose them to the client, prefix them with
    * `NEXT_PUBLIC_`.
    */
-  client: {
-    NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS: z.number(),
-  },
+  client: {},
 
   /**
    * You can't destruct `process.env` as a regular object in the Next.js edge runtimes (e.g.
@@ -46,9 +52,9 @@ export const env = createEnv({
     CREATOR_FINGERPRINT_SALT: process.env.CREATOR_FINGERPRINT_SALT,
     RATE_LIMIT_AMOUNT: process.env.RATE_LIMIT_AMOUNT,
     RATE_LIMIT_TIME: process.env.RATE_LIMIT_TIME,
-    NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS: parseInt(
-      process.env.NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS ?? "60",
-    ),
+    CREATE_RATE_LIMIT_AMOUNT: process.env.CREATE_RATE_LIMIT_AMOUNT,
+    CREATE_RATE_LIMIT_TIME: process.env.CREATE_RATE_LIMIT_TIME,
+    TRUSTED_PROXY_COUNT: process.env.TRUSTED_PROXY_COUNT,
     STORAGE_ADAPTER: process.env.STORAGE_ADAPTER,
     STORAGE_BASE_PATH: process.env.STORAGE_BASE_PATH,
     MAX_UPLOAD_SIZE_BYTES: process.env.MAX_UPLOAD_SIZE_BYTES,

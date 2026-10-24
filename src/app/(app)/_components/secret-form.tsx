@@ -29,13 +29,16 @@ import {
 } from "lucide-react";
 import { api } from "@/trpc/react";
 import {
-  generateAesKey,
+  base64urlEncode,
+  deriveSecretKeys,
+  encryptBytes,
+  encryptMeta,
   encryptText,
-  exportAesKey,
-  hashPassphrase,
-  encryptFile,
-  base64urlEncodeBytes,
+  generateLinkKey,
+  generatePassphraseSalt,
+  utf8ByteLength,
 } from "@/lib/secret-crypto";
+import { MAX_TEXT_SECRET_BYTES, PBKDF2_ITERATIONS } from "@/lib/secret-options";
 import { toast } from "sonner";
 import { GeneratedLinkDialog } from "@/app/(app)/_components/generated-link-dialog";
 
@@ -45,7 +48,8 @@ const formSchema = z
   .object({
     mode: z.enum(["text", "file"]),
     name: z.string().trim().optional(),
-    secret: z.string().trim().optional(),
+    // Secrets and passphrases are used exactly as typed: trimming would break e.g. PEM keys.
+    secret: z.string().optional(),
     passphrase: z.string().optional(),
     expiresIn: z.enum(["1h", "24h", "3d", "7d", "30d"]),
     maxViews: z.enum(["1", "3", "5", "10", "unlimited"]),
@@ -56,6 +60,18 @@ const formSchema = z
       ctx.addIssue({
         code: "custom",
         message: "Secret is required",
+        path: ["secret"],
+      });
+    }
+
+    if (
+      data.mode === "text" &&
+      data.secret &&
+      utf8ByteLength(data.secret) > MAX_TEXT_SECRET_BYTES
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Secret can be at most ${MAX_TEXT_SECRET_BYTES / 1024} KB`,
         path: ["secret"],
       });
     }
@@ -71,12 +87,15 @@ const formSchema = z
 
 type SecretFormValues = z.infer<typeof formSchema>;
 
-export function SecretForm() {
+export function SecretForm({ maxUploadBytes }: { maxUploadBytes: number }) {
   const [activeTab, setActiveTab] = useState<TabType>("text");
   const [usePassphrase, setUsePassphrase] = useState(false);
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [generatedLink, setGeneratedLink] = useState<string | null>(null);
+  const [generatedLinks, setGeneratedLinks] = useState<{
+    url: string;
+    deleteUrl: string;
+  } | null>(null);
   const [showGeneratedLink, setShowGeneratedLink] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -107,60 +126,84 @@ export function SecretForm() {
     (mode === "file" && (!files || files.length === 0));
 
   const onSubmit = async (values: SecretFormValues) => {
+    if (usePassphrase && !values.passphrase) {
+      form.setError("passphrase", { message: "Enter a passphrase" });
+      return;
+    }
+
     try {
-      const key = await generateAesKey();
-      const keyBase64url = await exportAesKey(key);
-
-      const passphraseHash =
-        usePassphrase && values.passphrase?.trim()
-          ? await hashPassphrase(values.passphrase.trim())
+      const linkKey = generateLinkKey();
+      const passphrase =
+        usePassphrase && values.passphrase
+          ? {
+              value: values.passphrase,
+              salt: generatePassphraseSalt(),
+              iterations: PBKDF2_ITERATIONS,
+            }
+          : null;
+      const keys = await deriveSecretKeys({ linkKey, passphrase });
+      const passphraseInput =
+        passphrase && keys.authToken
+          ? {
+              salt: passphrase.salt,
+              iterations: passphrase.iterations,
+              authToken: keys.authToken,
+            }
           : undefined;
+      const name = values.name?.trim() ?? "";
 
-      let idToken: string;
+      let created: { idToken: string; deleteToken: string };
 
       if (values.mode === "text") {
-        const secret = values.secret?.trim() ?? "";
-        if (!secret) return;
+        const secret = values.secret ?? "";
+        if (!secret.trim()) return;
 
-        const encrypted = await encryptText({ plaintext: secret, key });
-
-        const result = await createSharedText.mutateAsync({
-          encrypted,
-          name: values.name,
-          passphrase: passphraseHash,
+        created = await createSharedText.mutateAsync({
+          content: await encryptText(keys.contentKey, secret),
+          meta: await encryptMeta(keys.metaKey, {
+            name: name || undefined,
+          }),
+          passphrase: passphraseInput,
           expiresIn: values.expiresIn,
           maxViews: values.maxViews,
         });
-
-        idToken = result.idToken;
       } else {
         const file = values.files?.[0];
         if (!file) return;
 
-        const { encryptedBytes, iv } = await encryptFile({ file, key });
+        if (file.size > maxUploadBytes) {
+          form.setError("files", {
+            message: `File exceeds the maximum size of ${(maxUploadBytes / 1024 / 1024).toFixed(0)} MB`,
+          });
+          return;
+        }
 
-        const result = await uploadSecret.mutateAsync({
-          encryptedBytes: base64urlEncodeBytes(encryptedBytes),
-          iv: base64urlEncodeBytes(iv),
-          originalName: file.name,
-          mimeType:
-            file.type.length > 0 ? file.type : "application/octet-stream",
-          name: values.name?.trim() ?? undefined,
-          passphrase: passphraseHash,
+        const { ciphertext, iv } = await encryptBytes(
+          keys.contentKey,
+          new Uint8Array(await file.arrayBuffer()),
+        );
+
+        created = await uploadSecret.mutateAsync({
+          encryptedBytes: base64urlEncode(ciphertext),
+          iv: base64urlEncode(iv),
+          meta: await encryptMeta(keys.metaKey, {
+            name: name || undefined,
+            fileName: file.name,
+            mimeType:
+              file.type.length > 0 ? file.type : "application/octet-stream",
+          }),
+          passphrase: passphraseInput,
           expiresIn: values.expiresIn,
           maxViews: values.maxViews,
         });
-
-        idToken = result.idToken;
       }
 
-      const origin =
-        typeof window !== "undefined" ? window.location.origin : "";
-      const link =
-        origin && idToken ? `${origin}/s/${idToken}#${keyBase64url}` : "";
-
-      setGeneratedLink(link || null);
-      setShowGeneratedLink(!!link);
+      const origin = window.location.origin;
+      setGeneratedLinks({
+        url: `${origin}/s/${created.idToken}#${linkKey}`,
+        deleteUrl: `${origin}/s/${created.idToken}/delete#${created.deleteToken}`,
+      });
+      setShowGeneratedLink(true);
       form.reset();
     } catch (error) {
       toast.error("Unable to create secure link", {
@@ -180,7 +223,8 @@ export function SecretForm() {
         <GeneratedLinkDialog
           open={showGeneratedLink}
           onOpenChange={setShowGeneratedLink}
-          url={generatedLink}
+          url={generatedLinks?.url ?? null}
+          deleteUrl={generatedLinks?.deleteUrl ?? null}
         />
         {/* Tab Switcher */}
         <div className="bg-secondary/50 mb-6 flex gap-2 rounded-xl p-1">

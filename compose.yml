@@ -16,8 +16,6 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-harpo}
       - POSTGRES_USER=${POSTGRES_USER:-harpo}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-harpo}
-    ports:
-      - ${POSTGRES_PORT:-5432}:5432
     healthcheck:
       test:
         [
@@ -36,8 +34,6 @@ services:
 
   redis:
     image: redis:${REDIS_VERSION:-7}-alpine
-    ports:
-      - ${REDIS_PORT:-6379}:6379
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       timeout: 5s

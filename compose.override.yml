@@ -1,4 +1,13 @@
+# Development only: database and Redis ports are published to the host here, never in production.
 services:
+  database:
+    ports:
+      - ${POSTGRES_PORT:-5432}:5432
+
+  redis:
+    ports:
+      - ${REDIS_PORT:-6379}:6379
+
   app:
     build:
       target: dev

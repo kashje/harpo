@@ -10,9 +10,10 @@ import { initTRPC } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError, z } from "zod";
 
+import { env } from "@/env";
 import { db } from "@/server/db";
 import { checkRateLimit } from "@/server/api/utils/rateLimit";
-import { getCreatorFingerprint } from "@/server/api/utils/secret";
+import { getClientIp, getCreatorFingerprint } from "@/server/api/utils/secret";
 
 /**
  * 1. CONTEXT
@@ -29,6 +30,7 @@ import { getCreatorFingerprint } from "@/server/api/utils/secret";
 export const createTRPCContext = async (opts: { headers: Headers }) => {
   return {
     db,
+    clientIp: getClientIp(opts.headers),
     ...opts,
   };
 };
@@ -76,15 +78,30 @@ export const createCallerFactory = t.createCallerFactory;
 export const createTRPCRouter = t.router;
 
 /**
- * Middleware for rate limiting by IP + User-Agent. Uses Redis and throws TOO_MANY_REQUESTS when
- * the client exceeds RATE_LIMIT_AMOUNT requests per RATE_LIMIT_TIME seconds.
+ * Middleware for rate limiting by client IP. Uses Redis and throws TOO_MANY_REQUESTS when the
+ * client exceeds RATE_LIMIT_AMOUNT requests per RATE_LIMIT_TIME seconds.
  */
 const rateLimitMiddleware = t.middleware(async ({ next, ctx }) => {
-  const ipHeader = ctx.headers.get("x-forwarded-for");
-  const ip = ipHeader?.split(",")[0]?.trim() ?? "";
-  const userAgent = ctx.headers.get("user-agent") ?? "";
-  const identifier = getCreatorFingerprint({ ip, userAgent });
-  await checkRateLimit(identifier);
+  await checkRateLimit({
+    bucket: "global",
+    identifier: getCreatorFingerprint({ ip: ctx.clientIp }),
+    limit: env.RATE_LIMIT_AMOUNT,
+    windowSeconds: env.RATE_LIMIT_TIME,
+  });
+  return next({ ctx });
+});
+
+/**
+ * Throttles people spamming new secrets: at most CREATE_RATE_LIMIT_AMOUNT secrets per
+ * CREATE_RATE_LIMIT_TIME seconds per client IP, on top of the global limit.
+ */
+const createRateLimitMiddleware = t.middleware(async ({ next, ctx }) => {
+  await checkRateLimit({
+    bucket: "create",
+    identifier: getCreatorFingerprint({ ip: ctx.clientIp }),
+    limit: env.CREATE_RATE_LIMIT_AMOUNT,
+    windowSeconds: env.CREATE_RATE_LIMIT_TIME,
+  });
   return next({ ctx });
 });
 
@@ -121,3 +138,8 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
 export const publicProcedure = t.procedure
   .use(rateLimitMiddleware)
   .use(timingMiddleware);
+
+/** Procedure for endpoints that create secrets; adds the creation throttle. */
+export const createSecretProcedure = publicProcedure.use(
+  createRateLimitMiddleware,
+);

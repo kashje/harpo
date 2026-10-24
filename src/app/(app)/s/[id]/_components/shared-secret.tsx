@@ -9,7 +9,9 @@ import {
   FileText,
   FileKey,
   BookKey,
+  Lock,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
@@ -20,49 +22,20 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
-import type { Secret, SecretPayload } from "@/types";
-import { env } from "@/env";
+import type { Secret } from "@/types";
 import {
+  base64urlDecode,
+  decryptBytes,
+  decryptMeta,
   decryptText,
-  decryptFile,
-  importAesKey,
-  base64urlDecodeBytes,
-  type EncryptedPayload,
-  type EncryptedFilePayload,
+  deriveSecretKeys,
+  type SecretMeta,
 } from "@/lib/secret-crypto";
-
-async function triggerFileDownload(opts: {
-  encryptedBytesB64: string;
-  encryptedPayload: string;
-  keyBase64url: string;
-}) {
-  const metadata = JSON.parse(opts.encryptedPayload) as EncryptedFilePayload;
-  const encryptedBytes = base64urlDecodeBytes(opts.encryptedBytesB64);
-  const iv = base64urlDecodeBytes(metadata.iv);
-
-  const key = await importAesKey(opts.keyBase64url);
-  const decryptedBytes = await decryptFile({ encryptedBytes, iv, key });
-
-  const blob = new Blob([decryptedBytes.buffer as ArrayBuffer], {
-    type: metadata.mimeType ?? "application/octet-stream",
-  });
-  const url = URL.createObjectURL(blob);
-
-  try {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = metadata.originalName ?? "secret-file";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
 
 // The decryption key lives in the URL fragment, which is never sent to the
 // server, so it can only be read on the client.
@@ -75,12 +48,12 @@ function getKeyFromHash() {
   return window.location.hash.slice(1) || null;
 }
 
+/** `undefined` while rendering on the server, where the fragment is unknown. */
 function getServerKeyFromHash() {
-  return null;
+  return undefined;
 }
 
-function formatExpiresAt(expiresAt: Date | undefined) {
-  if (!expiresAt) return null;
+function formatExpiresAt(expiresAt: Date) {
   try {
     return new Intl.DateTimeFormat(undefined, {
       dateStyle: "medium",
@@ -91,121 +64,125 @@ function formatExpiresAt(expiresAt: Date | undefined) {
   }
 }
 
+const getErrorMessage = (err: unknown, fallback: string) =>
+  err instanceof Error && err.message ? err.message : fallback;
+
+function saveFile(bytes: Uint8Array<ArrayBuffer>, meta: SecretMeta | null) {
+  const blob = new Blob([bytes], {
+    type: meta?.mimeType ?? "application/octet-stream",
+  });
+  const url = URL.createObjectURL(blob);
+
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = meta?.fileName ?? "secret-file";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export function SharedSecret({
   secret,
-  secretIdHash,
+  idToken,
 }: {
   secret: NonNullable<Secret>;
-  secretIdHash: string;
+  idToken: string;
 }) {
-  const { data, isLoading, error, refetch } = api.secret.get.useQuery(
-    { id: secretIdHash },
-    { refetchOnWindowFocus: false, initialData: secret },
-  );
+  const reveal = api.secret.reveal.useMutation();
+  const download = api.storage.download.useMutation();
 
-  const tagDestruction = api.secret.tagDeletion.useMutation();
-  const consume = api.secret.consume.useMutation();
-  const downloadFile = api.storage.download.useMutation();
-
-  const [revealed, setRevealed] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [destroyCountdown, setDestroyCountdown] = useState<number | null>(null);
-  const [decryptedText, setDecryptedText] = useState<string | null>(null);
-  const keyBase64url = useSyncExternalStore(
+  const linkKey = useSyncExternalStore(
     subscribeToHash,
     getKeyFromHash,
     getServerKeyFromHash,
   );
+  const [metaResult, setMetaResult] = useState<{
+    linkKey: string;
+    meta: SecretMeta | null;
+  } | null>(null);
+  const [passphrase, setPassphrase] = useState("");
+  const [revealedText, setRevealedText] = useState<string | null>(null);
+  const [views, setViews] = useState({
+    viewCount: secret.viewCount,
+    maxViews: secret.maxViews,
+  });
+  const [destroyed, setDestroyed] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  const hasLimitedViews =
-    data?.maxViews !== undefined &&
-    data?.maxViews !== null &&
-    data.maxViews > 0;
+  const isFile = secret.type === "file";
+  const needsPassphrase = secret.passphrase !== null;
+  const isBusy = reveal.isPending || download.isPending;
   const isLastView =
-    !!data && hasLimitedViews && data.viewCount + 1 >= data.maxViews;
+    views.maxViews > 0 && views.viewCount + 1 >= views.maxViews;
 
-  const expiresLabel = formatExpiresAt(data?.expiresAt);
+  useEffect(() => {
+    if (!linkKey) return;
+    let cancelled = false;
 
-  const encryptedPayload = JSON.parse(
-    data?.encryptedPayload ?? "{}",
-  ) as SecretPayload;
-  const isFile = encryptedPayload.type === "file";
+    deriveSecretKeys({ linkKey })
+      .then(({ metaKey }) => decryptMeta(metaKey, secret.meta))
+      .then((meta) => !cancelled && setMetaResult({ linkKey, meta }))
+      .catch(() => !cancelled && setMetaResult({ linkKey, meta: null }));
 
-  const getDecryptedSecret = async () => {
-    if (!data || isFile) return null;
-    if (decryptedText !== null) return decryptedText;
+    return () => {
+      cancelled = true;
+    };
+  }, [linkKey, secret.meta]);
 
-    try {
-      const payload = JSON.parse(data.encryptedPayload) as EncryptedPayload;
+  // Only trust a result that belongs to the key currently in the URL.
+  const metaForKey = metaResult?.linkKey === linkKey ? metaResult : null;
+  const meta = metaForKey?.meta ?? null;
+  const keyError =
+    linkKey === null
+      ? "The decryption key is missing from the link. Make sure you used the full link."
+      : metaForKey && !metaForKey.meta
+        ? "The decryption key in the link is invalid. Make sure you used the full link."
+        : null;
+  const expiresLabel = formatExpiresAt(secret.expiresAt);
 
-      if (!keyBase64url) {
-        throw new Error(
-          "Missing decryption key in URL fragment. Make sure you used the full link.",
-        );
-      }
-
-      const key = await importAesKey(keyBase64url);
-      const plaintext = await decryptText({ encrypted: payload, key });
-
-      return plaintext;
-    } catch (error) {
-      const message =
-        (error as { message?: string }).message ??
-        "Unable to decrypt this secret.";
-      toast.error("Decryption failed", {
-        description: message,
-        closeButton: true,
-        position: "top-center",
-      });
-      return null;
+  const getKeys = async () => {
+    if (!linkKey || keyError) {
+      throw new Error(keyError ?? "The decryption key is missing.");
     }
+    if (secret.passphrase && !passphrase) {
+      throw new Error("Enter the passphrase to unlock this secret.");
+    }
+
+    return deriveSecretKeys({
+      linkKey,
+      passphrase: secret.passphrase
+        ? { ...secret.passphrase, value: passphrase }
+        : null,
+    });
+  };
+
+  /** Reveals the text once; after that the decrypted text is reused without using a view. */
+  const revealText = async (): Promise<string> => {
+    if (revealedText !== null) return revealedText;
+
+    const keys = await getKeys();
+    const result = await reveal.mutateAsync({
+      idToken,
+      authToken: keys.authToken ?? undefined,
+    });
+    const text = await decryptText(keys.contentKey, result.content);
+
+    setRevealedText(text);
+    setViews({ viewCount: result.viewCount, maxViews: result.maxViews });
+    setDestroyed(result.destroyed);
+    return text;
   };
 
   const handleReveal = async () => {
-    if (revealed) return;
-
-    // On the very last allowed view, schedule destruction server-side and then
-    // start a client-side countdown so the user can read/copy before it goes
-    // away.
-    if (isLastView && !destroyCountdown) {
-      try {
-        await tagDestruction.mutateAsync({ id: secret.id });
-        const ttlSeconds = Number(
-          env.NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS ?? 30,
-        );
-        const descryptedSecret = await getDecryptedSecret();
-        setDecryptedText(descryptedSecret);
-        setRevealed(true);
-        setDestroyCountdown(ttlSeconds);
-        await refetch();
-      } catch (err) {
-        toast.error("Secrets", {
-          description:
-            (err as { message?: string }).message ??
-            "Reveal countdown not available",
-          position: "top-center",
-          closeButton: true,
-        });
-        const ttlSeconds = Math.ceil(
-          (data?.expiresAt.getTime() - new Date().getTime()) / 1000,
-        );
-        setRevealed(true);
-        setDestroyCountdown(ttlSeconds);
-      }
-      return;
-    }
-
     try {
-      const res = await consume.mutateAsync({ id: secret.id });
-      if (!res.viewCount) return;
-      const descryptedSecret = await getDecryptedSecret();
-      setDecryptedText(descryptedSecret);
-      setRevealed(true);
-      await refetch();
+      await revealText();
     } catch (err) {
       toast.error("Unable to reveal secret", {
-        description:
-          (err as { message?: string }).message ?? "Reveal not available",
+        description: getErrorMessage(err, "Reveal not available"),
         position: "top-center",
         closeButton: true,
       });
@@ -213,32 +190,14 @@ export function SharedSecret({
   };
 
   const handleCopy = async () => {
-    if (!data?.encryptedPayload) return;
-
-    // If we're already on the last-view countdown, just allow copying without
-    // consuming another view; the countdown will handle destruction.
-    if (destroyCountdown !== null && revealed) {
-      const text = isFile ? data.encryptedPayload : await getDecryptedSecret();
-      if (!text) return;
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-      return;
-    }
-
     try {
-      const res = await consume.mutateAsync({ id: secret.id });
-      if (!res.viewCount) return;
-      const text = isFile ? data.encryptedPayload : await getDecryptedSecret();
-      if (!text) return;
+      const text = await revealText();
       await navigator.clipboard.writeText(text);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
-      await refetch();
     } catch (err) {
       toast.error("Unable to copy secret", {
-        description:
-          (err as { message?: string }).message ?? "Copy not available",
+        description: getErrorMessage(err, "Copy not available"),
         position: "top-center",
         closeButton: true,
       });
@@ -246,57 +205,34 @@ export function SharedSecret({
   };
 
   const handleDownload = async () => {
-    if (!data?.encryptedPayload) return;
-    if (!keyBase64url) {
-      toast.error("Missing decryption key", {
-        description:
-          "Make sure you opened the full share link including the #key part.",
-        position: "top-center",
-        closeButton: true,
-      });
-      return;
-    }
     try {
-      const { encryptedBytes: encryptedBytesB64 } =
-        await downloadFile.mutateAsync({ idToken: secretIdHash });
-      await triggerFileDownload({
-        encryptedBytesB64,
-        encryptedPayload: data.encryptedPayload,
-        keyBase64url,
+      const keys = await getKeys();
+      const result = await download.mutateAsync({
+        idToken,
+        authToken: keys.authToken ?? undefined,
       });
-      await consume.mutateAsync({ id: secret.id });
-      await refetch();
+      setViews({ viewCount: result.viewCount, maxViews: result.maxViews });
+      setDestroyed(result.destroyed);
+
+      const bytes = await decryptBytes(
+        keys.contentKey,
+        base64urlDecode(result.encryptedBytes),
+        base64urlDecode(result.iv),
+      );
+      saveFile(bytes, meta);
     } catch (err) {
       toast.error("Unable to download secret", {
-        description:
-          (err as { message?: string }).message ?? "Download not available",
+        description: getErrorMessage(err, "Download not available"),
         position: "top-center",
         closeButton: true,
       });
     }
   };
 
-  useEffect(() => {
-    if (destroyCountdown === null) return;
-
-    const id = window.setTimeout(
-      () => {
-        if (destroyCountdown <= 1) {
-          // Countdown finished: the server-side expiry has already been armed,
-          // so just clear local state and refetch.
-          setDestroyCountdown(null);
-          void refetch();
-          return;
-        }
-        setDestroyCountdown(destroyCountdown - 1);
-      },
-      destroyCountdown > 0 ? 1000 : 0,
-    );
-
-    return () => window.clearTimeout(id);
-  }, [destroyCountdown, refetch]);
-
-  const showUnavailable = !isLoading && (error ? true : data == null);
+  const title =
+    meta?.name ?? meta?.fileName ?? (isFile ? "Shared file" : "Shared secret");
+  const canAct = !keyError && !!linkKey && !!metaForKey && !destroyed;
+  const revealed = revealedText !== null;
 
   return (
     <Card className="bg-card/60 border-border/50 backdrop-blur-xl">
@@ -309,156 +245,153 @@ export function SharedSecret({
               <BookKey className="text-primary h-4 w-4" />
             )}
           </div>
-          {data?.name ?? secret.name}
+          {title}
         </CardTitle>
         <CardDescription className="text-muted-foreground">
-          {expiresLabel ? (
-            <>
-              Expires{" "}
-              <span className="font-medium" suppressHydrationWarning>
-                {expiresLabel}
-              </span>
-            </>
-          ) : (
-            "Securely shared secret"
-          )}
+          Expires{" "}
+          <span className="font-medium" suppressHydrationWarning>
+            {expiresLabel}
+          </span>
         </CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {isLoading && (
-          <Alert>
-            <AlertTitle>Loading…</AlertTitle>
-            <AlertDescription>Fetching the secret payload.</AlertDescription>
-          </Alert>
-        )}
-
-        {showUnavailable && (
+        {keyError && (
           <Alert className="border-red-500/30 bg-red-500/10 text-red-500">
-            <AlertTitle>Secret unavailable</AlertTitle>
+            <AlertTitle>Cannot decrypt</AlertTitle>
             <AlertDescription className="text-red-500/80">
-              This link is invalid, expired, or the secret has already been
-              consumed.
+              {keyError}
             </AlertDescription>
           </Alert>
         )}
 
-        {!showUnavailable &&
-          !isLoading &&
-          data?.maxViews &&
-          data?.maxViews > 1 && (
-            <Alert>
-              <AlertTitle>Copying or Revealing</AlertTitle>
-              <AlertDescription>
-                When you copy or reveal the secret it will count as a view added
-              </AlertDescription>
-            </Alert>
-          )}
-
-        {!showUnavailable && !isLoading && data?.maxViews === 1 && (
+        {destroyed && (
           <Alert className="border-amber-500/30 bg-amber-500/30 text-amber-500">
-            <AlertTitle>Instant Destruction</AlertTitle>
+            <AlertTitle>Secret destroyed</AlertTitle>
             <AlertDescription className="text-amber-500/80">
-              This secret will be immediately destroyed after revealing or
-              copying
+              This was the last view and the secret has been deleted from the
+              server. Save it before you leave this page.
             </AlertDescription>
           </Alert>
         )}
 
-        {!isLoading && data && (
-          <>
-            <div className="space-y-2">
-              <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                {isFile ? (
-                  <>
-                    <FileText className="h-4 w-4" />
-                    File payload
-                    {encryptedPayload.type === "file"
-                      ? ` (${encryptedPayload.mimeType})`
-                      : ""}
-                  </>
-                ) : (
-                  <>
-                    <FileText className="h-4 w-4" />
-                    Text payload
-                  </>
-                )}
-                <span className="text-muted-foreground/70">
-                  • views: {data.viewCount}/{data.maxViews}
-                </span>
-              </div>
+        {!destroyed && !revealed && isLastView && (
+          <Alert className="border-amber-500/30 bg-amber-500/30 text-amber-500">
+            <AlertTitle>Last view</AlertTitle>
+            <AlertDescription className="text-amber-500/80">
+              This secret is destroyed as soon as you{" "}
+              {isFile ? "download it" : "reveal or copy it"}.
+            </AlertDescription>
+          </Alert>
+        )}
 
-              {isFile ? (
+        {!destroyed && !revealed && !isLastView && views.maxViews > 1 && (
+          <Alert>
+            <AlertTitle>Views are limited</AlertTitle>
+            <AlertDescription>
+              {isFile
+                ? "Every download counts as a view."
+                : "Revealing or copying the secret counts as one view."}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {needsPassphrase && !revealed && !destroyed && (
+          <Field>
+            <FieldLabel
+              htmlFor="passphrase"
+              className="text-foreground flex items-center gap-2 font-medium"
+            >
+              <Lock className="text-primary h-4 w-4" />
+              Passphrase
+            </FieldLabel>
+            <Input
+              id="passphrase"
+              type="password"
+              autoComplete="off"
+              placeholder="Enter the passphrase for this secret"
+              value={passphrase}
+              onChange={(e) => setPassphrase(e.target.value)}
+            />
+          </Field>
+        )}
+
+        <div className="space-y-2">
+          <div className="text-muted-foreground flex items-center gap-2 text-xs">
+            <FileText className="h-4 w-4" />
+            {isFile
+              ? `File payload${meta?.mimeType ? ` (${meta.mimeType})` : ""}`
+              : "Text payload"}
+            <span className="text-muted-foreground/70">
+              • views: {views.viewCount}/
+              {views.maxViews > 0 ? views.maxViews : "∞"}
+            </span>
+          </div>
+
+          {isFile ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              className="w-full"
+              onClick={handleDownload}
+              disabled={!canAct || isBusy}
+            >
+              <Download className="h-4 w-4" />
+              Download
+            </Button>
+          ) : revealed ? (
+            <div className="relative">
+              <Textarea
+                value={revealedText}
+                readOnly
+                className={cn(
+                  "bg-input/50 border-border/50 min-h-[220px] resize-none pr-32 font-mono text-sm",
+                )}
+              />
+              <div className="absolute top-4 right-4">
+                <Button type="button" variant="outline" onClick={handleCopy}>
+                  {copied ? (
+                    <>
+                      <Check className="h-4 w-4" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4" />
+                      Copy
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Card className="relative min-h-[220px]">
+              <div className="absolute top-4 right-4">
                 <Button
                   type="button"
-                  variant="secondary"
-                  size="lg"
-                  className="w-full"
-                  onClick={handleDownload}
-                  disabled={consume.isPending}
+                  variant="outline"
+                  onClick={handleCopy}
+                  disabled={!canAct || isBusy}
                 >
-                  <Download className="h-4 w-4" />
-                  Download
+                  <Copy className="h-4 w-4" />
+                  Copy
                 </Button>
-              ) : (
-                <>
-                  {revealed ? (
-                    <div className="relative">
-                      <Textarea
-                        value={decryptedText ?? "Decrypting secret…"}
-                        readOnly
-                        className={cn(
-                          "bg-input/50 border-border/50 min-h-[220px] resize-none pr-32 font-mono text-sm",
-                        )}
-                      />
-                      {destroyCountdown !== null && (
-                        <div className="text-muted-foreground pointer-events-none absolute right-3 bottom-2 text-xs">
-                          Secret will be destroyed in {destroyCountdown}s
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <Card className="relative min-h-[220px]">
-                      {!isFile && (
-                        <div className="absolute top-4 right-4">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={handleCopy}
-                            disabled={consume.isPending}
-                          >
-                            {copied ? (
-                              <>
-                                <Check className="h-4 w-4" />
-                                Copied
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="h-4 w-4" />
-                                Copy
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      )}
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={handleReveal}
-                          disabled={consume.isPending || revealed}
-                        >
-                          <Eye className="h-4 w-4" />
-                          Reveal
-                        </Button>
-                      </div>
-                    </Card>
-                  )}
-                </>
-              )}
-            </div>
-          </>
-        )}
+              </div>
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleReveal}
+                  disabled={!canAct || isBusy}
+                >
+                  <Eye className="h-4 w-4" />
+                  Reveal
+                </Button>
+              </div>
+            </Card>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
