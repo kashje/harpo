@@ -41,8 +41,8 @@ describe("secret-crypto", () => {
     expect(await decryptText(contentKey, b)).toBe("sensitive data");
   });
 
-  it("rejects a link key of the wrong length", async () => {
-    for (const linkKey of ["AAAA", generateLinkKey().slice(0, 20)]) {
+  it("rejects malformed link keys and keys of the wrong length", async () => {
+    for (const linkKey of ["short", "AAAA", generateLinkKey().slice(0, 20)]) {
       await expect(deriveSecretKeys({ linkKey })).rejects.toThrow(
         /decryption key in the link is invalid/,
       );

@@ -104,12 +104,16 @@ export const deriveSecretKeys = async (params: {
   linkKey: string;
   passphrase?: (PassphraseParams & { value: string }) | null;
 }): Promise<SecretKeys> => {
-  const linkKeyBytes = base64urlDecode(params.linkKey);
-  if (linkKeyBytes.length !== LINK_KEY_BYTES) {
-    throw new Error(
-      "The decryption key in the link is invalid. Make sure you used the full link.",
-    );
+  const invalidKey = new Error(
+    "The decryption key in the link is invalid. Make sure you used the full link.",
+  );
+  let linkKeyBytes: Bytes;
+  try {
+    linkKeyBytes = base64urlDecode(params.linkKey);
+  } catch {
+    throw invalidKey;
   }
+  if (linkKeyBytes.length !== LINK_KEY_BYTES) throw invalidKey;
 
   let passphraseKeyBytes: Bytes = new Uint8Array(0);
   let authToken: string | null = null;
