@@ -1,10 +1,9 @@
-# Production / self-hosting: app (prod image). Database and Redis are in compose.yml.
+# Production / self-hosting: app (prod image). Redis is in compose.yml.
 # Use with: docker compose -f compose.yml -f compose.prod.yml up -d
 # Set in .env:
-#   POSTGRES_PASSWORD and REDIS_PASSWORD (required, no defaults in production)
-#   DATABASE_URL (e.g. postgresql://harpo:<POSTGRES_PASSWORD>@database:5432/harpo)
+#   REDIS_PASSWORD (required, no default in production)
 #   REDIS_URL (e.g. redis://:<REDIS_PASSWORD>@redis:6379)
-# Database and Redis are only reachable from the compose network; their ports aren't published.
+# Redis is only reachable from the compose network; its port isn't published.
 
 services:
   app:
@@ -13,14 +12,14 @@ services:
     ports:
       - ${APP_PORT:-3000}:3000
 
-  database:
-    environment:
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-
   redis:
     command:
       [
         "redis-server",
+        "--save",
+        "",
+        "--appendonly",
+        "no",
         "--requirepass",
         "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}",
       ]

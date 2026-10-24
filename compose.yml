@@ -2,46 +2,18 @@ services:
   app:
     image: ${IMAGES_PREFIX:-}app-web
     environment:
-      - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
     depends_on:
-      database:
-        condition: service_healthy
       redis:
         condition: service_healthy
 
-  database:
-    image: postgres:${POSTGRES_VERSION:-17}-alpine
-    environment:
-      - POSTGRES_DB=${POSTGRES_DB:-harpo}
-      - POSTGRES_USER=${POSTGRES_USER:-harpo}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-harpo}
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "pg_isready",
-          "-d",
-          "${POSTGRES_DB:-harpo}",
-          "-U",
-          "${POSTGRES_USER:-harpo}",
-        ]
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    volumes:
-      - db_data:/var/lib/postgresql/data:rw
-
+  # Redis is the only datastore. It deliberately runs without persistence: after a restart every
+  # secret is gone, so a secret that was already viewed can never come back.
   redis:
     image: redis:${REDIS_VERSION:-7}-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       timeout: 5s
       retries: 5
       start_period: 5s
-    volumes:
-      - redis_data:/data:rw
-
-volumes:
-  db_data:
-  redis_data:
