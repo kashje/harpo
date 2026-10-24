@@ -53,29 +53,19 @@ Only commits that affect the release (e.g. `feat:`, `fix:`) will trigger a new v
 
 Tests use [Vitest](https://vitest.dev). Run all tests with `pnpm test` or `pnpm test:run`.
 
-Integration tests require a test database and a valid `.env.test` (see `.env.test.example`). **If `.env.test` is missing or incomplete, tests will fail.**
+Tests don't need any running services: Redis is replaced by an in-memory mock ([ioredis-mock](https://github.com/stipsan/ioredis-mock)) in `vitest.setup.ts`, and files go to a temporary directory. They do need a valid `.env.test` (see `.env.test.example`). **If `.env.test` is missing or incomplete, tests will fail.**
 
-### Test database (Docker)
-
-1. Start a Postgres container for tests:
-   ```bash
-   pnpm test:db:up
-   ```
-2. Copy the example env and set the required secrets:
+1. Copy the example env and set the required secrets:
    ```bash
    cp .env.test.example .env.test
    ```
    Edit `.env.test`: set `URL_ID_ENC_KEY` (e.g. `openssl rand -base64 32`) and `CREATOR_FINGERPRINT_SALT`.
-3. Apply the schema to the test database:
-   ```bash
-   pnpm test:db:push
-   ```
-4. Run tests:
+2. Run tests:
    ```bash
    pnpm test:run
    ```
 
-To stop the test database: `pnpm test:db:down`.
+ioredis-mock runs Lua scripts too, but not exactly like Redis: a Lua `false` isn't turned into `null`, and missing `HMGET` fields aren't `false`. Keep the scripts in `src/server/secretStore.ts` to `EXISTS`, `HGET` and plain number/string results.
 
 ## Testing production build
 
@@ -87,21 +77,23 @@ To build a production image, run:
 docker build --target prod -t harpo:prod .
 ```
 
-### Test the prod image with the test database
+### Test the prod image with Redis
 
-To run the production image against the test Postgres from `compose.test.yml`:
-
-1. Start the test DB: `docker compose -f compose.test.yml up -d`
-2. Find the compose network name: `docker network ls` (e.g. `harpo_default`)
-3. Run the image on that network (use `test-db:5432` from inside the network):
+1. Start Redis on its own network:
 
    ```bash
-   docker run --rm -p 3000:3000 --network harpo_default \
-     -e DATABASE_URL=postgresql://harpo:harpo@test-db:5432/harpo_test \
+   docker network create harpo-test
+   docker run -d --rm --name harpo-test-redis --network harpo-test redis:7-alpine redis-server --save "" --appendonly no
+   ```
+
+2. Run the image on that network:
+
+   ```bash
+   docker run --rm -p 3000:3000 --network harpo-test \
+     -e REDIS_URL=redis://harpo-test-redis:6379 \
+     -e RATE_LIMIT_AMOUNT=60 -e RATE_LIMIT_TIME=60 \
      -e URL_ID_ENC_KEY=your-key -e CREATOR_FINGERPRINT_SALT=your-salt \
      harpo:prod
    ```
 
-   Replace `harpo_default` with your project’s network name if different.
-
-Migrations will run automatically on startup. Open http://localhost:3000 to see the app.
+Open http://localhost:3000 to see the app. Afterwards: `docker stop harpo-test-redis && docker network rm harpo-test`.

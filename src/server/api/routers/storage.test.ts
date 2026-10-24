@@ -8,7 +8,7 @@ import { env } from "@/env";
 import { getCaller } from "@/test/trpc";
 import {
   expireSecret,
-  findSecretRow,
+  findStoredSecret,
   makeFileSecretInput,
   makeTextSecretInput,
 } from "@/test/secrets";
@@ -23,6 +23,7 @@ import {
   encodeSecretIdToken,
   secretFilePath,
 } from "@/server/api/utils/secret";
+import { claimSecretView } from "@/server/secretStore";
 
 const withCode = (code: TRPCError["code"]) =>
   expect.objectContaining({ code }) as TRPCError;
@@ -52,7 +53,7 @@ describe("storage router", () => {
       });
       const { idToken } = await caller.storage.upload(input);
 
-      expect(JSON.stringify(await findSecretRow(idToken))).not.toContain(
+      expect(JSON.stringify(await findStoredSecret(idToken))).not.toContain(
         "prod-credentials",
       );
 
@@ -107,7 +108,7 @@ describe("storage router", () => {
       const result = await caller.storage.download({ idToken });
 
       expect(result.destroyed).toBe(true);
-      expect(await findSecretRow(idToken)).toBeNull();
+      expect(await findStoredSecret(idToken)).toBeNull();
       expect(storedFileExists(idToken)).toBe(false);
       expect(existsSync(dirname(storedPath(idToken)))).toBe(false);
       await expect(caller.storage.download({ idToken })).rejects.toThrowError(
@@ -155,27 +156,30 @@ describe("storage router", () => {
       expect(result.viewCount).toBe(1);
     });
 
-    it("deletes the secret and its file when it has expired", async () => {
-      const caller = await getCaller();
-      const { input } = await makeFileSecretInput();
-      const { idToken } = await caller.storage.upload(input);
-      await expireSecret(idToken);
-
-      await expect(caller.storage.download({ idToken })).rejects.toThrowError(
-        withCode("NOT_FOUND"),
-      );
-      expect(await findSecretRow(idToken)).toBeNull();
-      expect(storedFileExists(idToken)).toBe(false);
-    });
-
-    it("removes the file when an expired secret is opened", async () => {
+    // The sweeper removes the file afterwards; see sweeper.test.ts.
+    it("refuses an expired secret", async () => {
       const caller = await getCaller();
       const { input } = await makeFileSecretInput();
       const { idToken } = await caller.storage.upload(input);
       await expireSecret(idToken);
 
       expect(await caller.secret.get({ idToken })).toBeNull();
-      expect(storedFileExists(idToken)).toBe(false);
+      await expect(caller.storage.download({ idToken })).rejects.toThrowError(
+        withCode("NOT_FOUND"),
+      );
+    });
+
+    it("hides a file secret whose last download is still running", async () => {
+      const caller = await getCaller();
+      const { input } = await makeFileSecretInput("once", { maxViews: "1" });
+      const { idToken } = await caller.storage.upload(input);
+      await claimSecretView(decodeSecretIdToken(idToken));
+
+      expect(await findStoredSecret(idToken)).not.toBeNull();
+      expect(await caller.secret.get({ idToken })).toBeNull();
+      await expect(caller.storage.download({ idToken })).rejects.toThrowError(
+        withCode("NOT_FOUND"),
+      );
     });
 
     it("rejects downloading a text secret", async () => {
@@ -214,7 +218,7 @@ describe("storage router", () => {
 
       await caller.secret.delete({ idToken, deleteToken });
 
-      expect(await findSecretRow(idToken)).toBeNull();
+      expect(await findStoredSecret(idToken)).toBeNull();
       expect(storedFileExists(idToken)).toBe(false);
     });
   });

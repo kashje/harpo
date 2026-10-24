@@ -5,7 +5,7 @@ import type { TRPCError } from "@trpc/server";
 import { getCaller } from "@/test/trpc";
 import {
   expireSecret,
-  findSecretRow,
+  findStoredSecret,
   makeTextSecretInput,
 } from "@/test/secrets";
 import {
@@ -77,17 +77,17 @@ describe("secret router", () => {
       await caller.secret.get({ idToken });
       await caller.secret.get({ idToken });
 
-      expect((await findSecretRow(idToken))?.viewCount).toBe(0);
+      expect((await findStoredSecret(idToken))?.viewCount).toBe(0);
     });
 
-    it("deletes and hides an expired secret", async () => {
+    it("hides an expired secret", async () => {
       const caller = await getCaller();
       const { input } = await makeTextSecretInput();
       const { idToken } = await caller.secret.create(input);
       await expireSecret(idToken);
 
       expect(await caller.secret.get({ idToken })).toBeNull();
-      expect(await findSecretRow(idToken)).toBeNull();
+      expect(await findStoredSecret(idToken)).toBeNull();
     });
   });
 
@@ -100,7 +100,7 @@ describe("secret router", () => {
       });
       const { idToken, deleteToken } = await caller.secret.create(input);
 
-      const row = await findSecretRow(idToken);
+      const row = await findStoredSecret(idToken);
       const stored = JSON.stringify(row);
       expect(stored).not.toContain("plaintext marker");
       expect(stored).not.toContain("name marker");
@@ -147,7 +147,7 @@ describe("secret router", () => {
       const result = await caller.secret.reveal({ idToken });
 
       expect(result.destroyed).toBe(true);
-      expect(await findSecretRow(idToken)).toBeNull();
+      expect(await findStoredSecret(idToken)).toBeNull();
       expect(await caller.secret.get({ idToken })).toBeNull();
       await expect(caller.secret.reveal({ idToken })).rejects.toThrowError(
         withCode("NOT_FOUND"),
@@ -164,7 +164,7 @@ describe("secret router", () => {
       );
 
       expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(3);
-      expect(await findSecretRow(idToken)).toBeNull();
+      expect(await findStoredSecret(idToken)).toBeNull();
     });
 
     it("keeps unlimited secrets until they expire", async () => {
@@ -190,7 +190,7 @@ describe("secret router", () => {
       await expect(caller.secret.reveal({ idToken })).rejects.toThrowError(
         withCode("NOT_FOUND"),
       );
-      expect(await findSecretRow(idToken)).toBeNull();
+      expect(await findStoredSecret(idToken)).toBeNull();
     });
 
     it("throws BAD_REQUEST for a malformed id token", async () => {
@@ -238,7 +238,7 @@ describe("secret router", () => {
       await expect(caller.secret.reveal({ idToken })).rejects.toThrowError(
         withCode("UNAUTHORIZED"),
       );
-      expect((await findSecretRow(idToken))?.viewCount).toBe(0);
+      expect((await findStoredSecret(idToken))?.viewCount).toBe(0);
     });
 
     it("does not count a view for a wrong passphrase", async () => {
@@ -251,7 +251,7 @@ describe("secret router", () => {
         }),
       ).rejects.toThrowError(withCode("UNAUTHORIZED"));
 
-      const row = await findSecretRow(idToken);
+      const row = await findStoredSecret(idToken);
       expect(row?.viewCount).toBe(0);
       expect(row?.failedAttempts).toBe(1);
     });
@@ -299,7 +299,7 @@ describe("secret router", () => {
         caller.secret.reveal({ idToken, authToken }),
       ).rejects.toThrowError(withCode("FORBIDDEN"));
 
-      expect(await findSecretRow(idToken)).toBeNull();
+      expect(await findStoredSecret(idToken)).toBeNull();
     });
   });
 
@@ -312,7 +312,7 @@ describe("secret router", () => {
       expect(await caller.secret.delete({ idToken, deleteToken })).toEqual({
         success: true,
       });
-      expect(await findSecretRow(idToken)).toBeNull();
+      expect(await findStoredSecret(idToken)).toBeNull();
     });
 
     it("rejects a wrong delete token", async () => {
@@ -326,7 +326,7 @@ describe("secret router", () => {
       await expect(
         caller.secret.delete({ idToken, deleteToken: other.deleteToken }),
       ).rejects.toThrowError(withCode("FORBIDDEN"));
-      expect(await findSecretRow(idToken)).not.toBeNull();
+      expect(await findStoredSecret(idToken)).not.toBeNull();
     });
 
     it("refuses once the secret has been viewed", async () => {
@@ -338,7 +338,7 @@ describe("secret router", () => {
       await expect(
         caller.secret.delete({ idToken, deleteToken }),
       ).rejects.toThrowError(withCode("FORBIDDEN"));
-      expect(await findSecretRow(idToken)).not.toBeNull();
+      expect(await findStoredSecret(idToken)).not.toBeNull();
     });
 
     it("throws NOT_FOUND for a secret that's gone", async () => {

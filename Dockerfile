@@ -65,18 +65,6 @@ RUN mkdir .next; \
 COPY --from=builder --link --chown=1999:1999 /srv/app/.next/standalone ./
 COPY --from=builder --link --chown=1999:1999 /srv/app/.next/static ./.next/static
 
-# Copy migration script dependencies
-RUN mkdir -p node_modules
-COPY --from=builder --chown=1999:1999 /srv/app/node_modules/postgres ./node_modules/postgres
-COPY --from=builder --chown=1999:1999 /srv/app/node_modules/drizzle-orm ./node_modules/drizzle-orm
-
-# Migration files (run migrations at container start when DATABASE_URL is set)
-COPY --link drizzle ./drizzle
-COPY --link scripts/docker-migrate.mjs ./scripts/
-
-COPY --link scripts/docker-entrypoint.sh ./scripts/
-RUN chmod +x ./scripts/docker-entrypoint.sh
-
 RUN chown -R nextjs:nodejs /srv/app
 
 USER nextjs
@@ -84,5 +72,4 @@ USER nextjs
 EXPOSE 3000
 ENV HOSTNAME="0.0.0.0"
 
-ENTRYPOINT ["/srv/app/scripts/docker-entrypoint.sh"]
 CMD ["node", "server.js"]

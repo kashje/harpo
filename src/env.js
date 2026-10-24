@@ -7,7 +7,6 @@ export const env = createEnv({
    * isn't built with invalid env vars.
    */
   server: {
-    DATABASE_URL: z.url(),
     REDIS_URL: z.url(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
@@ -45,7 +44,6 @@ export const env = createEnv({
    * middlewares) or client-side so we need to destruct manually.
    */
   runtimeEnv: {
-    DATABASE_URL: process.env.DATABASE_URL,
     REDIS_URL: process.env.REDIS_URL,
     NODE_ENV: process.env.NODE_ENV,
     URL_ID_ENC_KEY: process.env.URL_ID_ENC_KEY,

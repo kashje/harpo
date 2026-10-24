@@ -1,5 +1,4 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, gt, lt, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 
 import { CRYPTO_VERSION } from "@/lib/secret-crypto";
@@ -8,20 +7,22 @@ import {
   MAX_PASSPHRASE_ATTEMPTS,
   MAX_VIEWS_COUNT,
 } from "@/lib/secret-options";
-import { db } from "@/server/db";
-import { secrets } from "@/server/db/schemas/secrets";
+import {
+  claimSecretView,
+  readSecret,
+  recordFailedAttempt,
+  type NewSecret,
+  type SecretType,
+} from "@/server/secretStore";
 import {
   decodeSecretIdToken,
   deleteSecret,
   generateDeleteToken,
-  getCreatorFingerprint,
   hashAuthToken,
   hashDeleteToken,
   verifyAuthToken,
 } from "./secret";
 import type { lifetimeSchema, metaSchema, passphraseSchema } from "./schemas";
-
-type SecretType = (typeof secrets.$inferSelect)["type"];
 
 export const decodeIdTokenOrThrow = (idToken: string): string => {
   try {
@@ -31,14 +32,16 @@ export const decodeIdTokenOrThrow = (idToken: string): string => {
   }
 };
 
-/** The columns every new secret needs, besides its content. */
+/** The fields every new secret needs, besides its type and content. */
 export async function buildNewSecretValues(
   input: {
-    clientIp: string;
     meta: z.infer<typeof metaSchema>;
     passphrase?: z.infer<typeof passphraseSchema>;
   } & z.infer<typeof lifetimeSchema>,
-) {
+): Promise<{
+  deleteToken: string;
+  values: Omit<NewSecret, "type" | "contentCiphertext" | "contentIv">;
+}> {
   const now = new Date();
   const deleteToken = generateDeleteToken();
 
@@ -46,7 +49,6 @@ export async function buildNewSecretValues(
     deleteToken,
     values: {
       version: CRYPTO_VERSION,
-      identification: getCreatorFingerprint({ ip: input.clientIp, date: now }),
       metaCiphertext: input.meta.ciphertext,
       metaIv: input.meta.iv,
       passphraseSalt: input.passphrase?.salt ?? null,
@@ -69,15 +71,10 @@ const unavailable = () =>
 
 /** Records a wrong passphrase and destroys the secret after too many attempts. Always throws. */
 async function registerFailedAttempt(id: string): Promise<never> {
-  const [row] = await db
-    .update(secrets)
-    .set({ failedAttempts: sql`${secrets.failedAttempts} + 1` })
-    .where(eq(secrets.id, id))
-    .returning({ failedAttempts: secrets.failedAttempts });
+  const failedAttempts = await recordFailedAttempt(id);
+  if (failedAttempts === null) throw unavailable();
 
-  if (!row) throw unavailable();
-
-  const remaining = MAX_PASSPHRASE_ATTEMPTS - row.failedAttempts;
+  const remaining = MAX_PASSPHRASE_ATTEMPTS - failedAttempts;
   if (remaining <= 0) {
     await deleteSecret(id);
     throw new TRPCError({
@@ -95,21 +92,15 @@ async function registerFailedAttempt(id: string): Promise<never> {
 
 /**
  * Checks the passphrase and counts one view, atomically: concurrent requests can never get more
- * views than `maxViews`. Returns the content columns; when `isLastView` is true the caller must
- * delete the secret once it has read what it needs (e.g. the stored file).
+ * views than `maxViews`. The last view of a text secret deletes it right away; for a file secret
+ * `isLastView` is true and the caller must delete it once it has read the stored file.
  */
 export async function claimView(params: {
   id: string;
   type: SecretType;
   authToken?: string;
 }) {
-  const access = await db
-    .select({ type: secrets.type, authTokenHash: secrets.authTokenHash })
-    .from(secrets)
-    .where(eq(secrets.id, params.id))
-    .limit(1)
-    .then((rows) => rows[0]);
-
+  const access = await readSecret(params.id);
   if (!access) throw unavailable();
 
   if (access.type !== params.type) {
@@ -131,29 +122,10 @@ export async function claimView(params: {
     }
   }
 
-  const now = new Date();
-  const [row] = await db
-    .update(secrets)
-    .set({ viewCount: sql`${secrets.viewCount} + 1`, updatedAt: now })
-    .where(
-      and(
-        eq(secrets.id, params.id),
-        gt(secrets.expiresAt, now),
-        or(eq(secrets.maxViews, 0), lt(secrets.viewCount, secrets.maxViews)),
-      ),
-    )
-    .returning({
-      contentCiphertext: secrets.contentCiphertext,
-      contentIv: secrets.contentIv,
-      viewCount: secrets.viewCount,
-      maxViews: secrets.maxViews,
-    });
-
-  if (!row) {
-    // Expired or out of views (possibly by a concurrent request): make sure it's gone.
-    await deleteSecret(params.id);
-    throw unavailable();
-  }
+  // Gone, expired or out of views (possibly by a concurrent request). Whoever claimed the last
+  // view deletes the secret, and Redis drops expired ones, so there is nothing to clean up here.
+  const row = await claimSecretView(params.id);
+  if (!row) throw unavailable();
 
   return {
     ...row,

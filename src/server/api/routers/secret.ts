@@ -1,5 +1,5 @@
+import { randomUUID } from "crypto";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
 
 import { TRPCError } from "@trpc/server";
 
@@ -9,9 +9,12 @@ import {
   createTRPCRouter,
   publicProcedure,
 } from "@/server/api/trpc";
-import { secrets } from "@/server/db/schemas/secrets";
 import {
-  deleteSecret,
+  createSecret,
+  deleteUnviewedSecret,
+  readSecret,
+} from "@/server/secretStore";
+import {
   deleteSecretFile,
   encodeSecretIdToken,
   hashDeleteToken,
@@ -52,32 +55,14 @@ export const secretRouter = createTRPCRouter({
    */
   get: publicProcedure
     .input(z.object({ idToken: idTokenSchema }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ input }) => {
       const id = tryDecodeSecretIdToken(input.idToken);
       if (!id) return null;
 
-      const row = await ctx.db
-        .select({
-          type: secrets.type,
-          metaCiphertext: secrets.metaCiphertext,
-          metaIv: secrets.metaIv,
-          viewCount: secrets.viewCount,
-          maxViews: secrets.maxViews,
-          expiresAt: secrets.expiresAt,
-          passphraseSalt: secrets.passphraseSalt,
-          passphraseIterations: secrets.passphraseIterations,
-        })
-        .from(secrets)
-        .where(eq(secrets.id, id))
-        .limit(1)
-        .then((rows) => rows[0] ?? null);
-
-      if (!row) return null;
-
-      if (isSecretUnavailable(row)) {
-        await deleteSecret(id);
-        return null;
-      }
+      // Out of views only happens while the last download of a file is still running; that
+      // download deletes it.
+      const row = await readSecret(id);
+      if (!row || isSecretUnavailable(row)) return null;
 
       return {
         type: row.type,
@@ -108,8 +93,6 @@ export const secretRouter = createTRPCRouter({
         authToken: input.authToken,
       });
 
-      if (view.isLastView) await deleteSecret(id);
-
       if (!view.contentCiphertext) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -128,46 +111,36 @@ export const secretRouter = createTRPCRouter({
   create: createSecretProcedure
     .input(CreateTextSecretSchema)
     .output(CreatedSecretSchema)
-    .mutation(async ({ ctx, input }) => {
-      const { deleteToken, values } = await buildNewSecretValues({
-        ...input,
-        clientIp: ctx.clientIp,
-      });
+    .mutation(async ({ input }) => {
+      const { deleteToken, values } = await buildNewSecretValues(input);
+      const id = randomUUID();
 
-      const [inserted] = await ctx.db
-        .insert(secrets)
-        .values({
+      try {
+        await createSecret(id, {
           ...values,
           type: "text",
           contentCiphertext: input.content.ciphertext,
           contentIv: input.content.iv,
-        })
-        .returning({ id: secrets.id });
-
-      if (!inserted) {
+        });
+      } catch (err) {
+        console.error("[secret.create] Redis error:", err);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to create secret",
         });
       }
 
-      return { idToken: encodeSecretIdToken(inserted.id), deleteToken };
+      return { idToken: encodeSecretIdToken(id), deleteToken };
     }),
 
   /** Lets the creator delete a secret with its delete token, as long as nobody viewed it yet. */
   delete: publicProcedure
     .input(z.object({ idToken: idTokenSchema, deleteToken: deleteTokenSchema }))
     .output(z.object({ success: z.literal(true) }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ input }) => {
       const id = decodeIdTokenOrThrow(input.idToken);
 
-      const row = await ctx.db
-        .select({ deleteTokenHash: secrets.deleteTokenHash })
-        .from(secrets)
-        .where(eq(secrets.id, id))
-        .limit(1)
-        .then((rows) => rows[0]);
-
+      const row = await readSecret(id);
       if (!row) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -182,12 +155,14 @@ export const secretRouter = createTRPCRouter({
         });
       }
 
-      const [deleted] = await ctx.db
-        .delete(secrets)
-        .where(and(eq(secrets.id, id), eq(secrets.viewCount, 0)))
-        .returning({ type: secrets.type });
-
-      if (!deleted) {
+      const result = await deleteUnviewedSecret(id);
+      if (result === "gone") {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Secret not found. It may have expired or been viewed.",
+        });
+      }
+      if (result === "viewed") {
         throw new TRPCError({
           code: "FORBIDDEN",
           message:
@@ -195,7 +170,7 @@ export const secretRouter = createTRPCRouter({
         });
       }
 
-      if (deleted.type === "file") await deleteSecretFile(id);
+      if (row.type === "file") await deleteSecretFile(id);
 
       return { success: true as const };
     }),

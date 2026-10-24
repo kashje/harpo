@@ -20,7 +20,7 @@ The platform is intended primarily for **internal company use** and is designed 
 - [Next.js](https://nextjs.org/) 15 (App Router)
 - [React](https://react.dev/) 19
 - [tRPC](https://trpc.io/) — type-safe API
-- [Drizzle ORM](https://orm.drizzle.team/) — PostgreSQL
+- [Redis](https://redis.io/) — the only datastore (via [ioredis](https://github.com/redis/ioredis))
 - [Tailwind CSS](https://tailwindcss.com/) v4 & [shadcn/ui](https://ui.shadcn.com/)
 - [T3 Stack](https://create.t3.gg/) architecture
 
@@ -28,7 +28,7 @@ The platform is intended primarily for **internal company use** and is designed 
 
 - [Node.js](https://nodejs.org/) (v20+)
 - [pnpm](https://pnpm.io/) (package manager)
-- [Docker](https://www.docker.com/) & Docker Compose (optional, for local DB and app)
+- [Docker](https://www.docker.com/) & Docker Compose (optional, for local Redis and app)
 
 ## Getting Started
 
@@ -50,7 +50,6 @@ cp .env.example .env
 
 | Variable                                  | Description                                                                       |
 | ----------------------------------------- | --------------------------------------------------------------------------------- |
-| `DATABASE_URL`                            | PostgreSQL connection string (e.g. `postgresql://user:pass@localhost:5432/harpo`) |
 | `REDIS_URL`                               | Redis connection string (e.g. `redis://localhost:6379`)                           |
 | `RATE_LIMIT_AMOUNT`                       | Number of requests per client IP per time window (e.g. 60)                        |
 | `RATE_LIMIT_TIME`                         | Time window in seconds (e.g. 60)                                                  |
@@ -62,31 +61,21 @@ cp .env.example .env
 
 See `src/env.js` for the full schema.
 
-### 3. Database
+### 3. Redis
+
+Redis is the only datastore; there is no database and nothing to migrate.
 
 **Option A — Docker Compose (recommended for local dev)**
 
-Starts PostgreSQL, the app, and Drizzle Studio:
+Starts Redis and the app:
 
 ```bash
 docker compose -f compose.yml -f compose.override.yml up -d
 ```
 
-Then run migrations (from the host, with `DATABASE_URL` pointing at the DB):
+**Option B — Local Redis**
 
-```bash
-pnpm db:push
-# or
-pnpm db:migrate
-```
-
-**Option B — Local PostgreSQL**
-
-Ensure PostgreSQL is running, set `DATABASE_URL` in `.env`, then:
-
-```bash
-pnpm db:push
-```
+Ensure Redis is running and set `REDIS_URL` in `.env`.
 
 ### 4. Run the app
 
@@ -102,7 +91,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Self-hosting
 
-To run Harpo in production with Docker (app + database + Redis), see **[Self-hosting](docs/SELF_HOST.md)**. You’ll use the production compose stack, set the required env vars, run migrations once, then start with `docker compose -f compose.yml -f compose.prod.yml up -d`.
+To run Harpo in production with Docker (app + Redis), see **[Self-hosting](docs/SELF_HOST.md)**. You’ll use the production compose stack, set the required env vars, then start with `docker compose -f compose.yml -f compose.prod.yml up -d`.
 
 ## Scripts
 
@@ -115,13 +104,6 @@ To run Harpo in production with Docker (app + database + Redis), see **[Self-hos
 | `pnpm check`                              | Lint and typecheck                           |
 | `pnpm lint` / `pnpm lint:fix`             | ESLint                                       |
 | `pnpm format:check` / `pnpm format:write` | Prettier                                     |
-| `pnpm db:generate`                        | Generate Drizzle migrations                  |
-| `pnpm db:migrate`                         | Run Drizzle migrations                       |
-| `pnpm db:push`                            | Push schema to DB (dev)                      |
-| `pnpm db:studio`                          | Open Drizzle Studio                          |
-| `pnpm test:db:up`                         | Creates a test postgres database container   |
-| `pnpm test:db:down`                       | Removes the test postgres database container |
-| `pnpm test:db:push`                       | Runs migrations for the test database        |
 | `pnpm test:run`                           | Runs the test suite (vitest)                 |
 
 ## Documentation

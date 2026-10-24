@@ -19,8 +19,8 @@ let redis = globalForRedis.redis;
 export function getRedis(): Redis {
   if (!redis) {
     redis = new Redis(env.REDIS_URL, {
-      // Give up on a command after one retry instead of queueing it until Redis is back, so the
-      // rate limiter can fail open rather than hang every request while Redis is down.
+      // Give up on a command after one retry instead of queueing it until Redis is back, so
+      // requests fail fast (and the rate limiter fails open) rather than hang while Redis is down.
       maxRetriesPerRequest: 1,
     });
     if (env.NODE_ENV !== "production") globalForRedis.redis = redis;

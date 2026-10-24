@@ -8,17 +8,24 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
-import { eq } from "drizzle-orm";
-
 import { env } from "@/env";
 import { DELETE_TOKEN_BYTES } from "@/lib/secret-options";
-import { db } from "@/server/db";
-import { secrets } from "@/server/db/schemas/secrets";
+import { deleteSecretRecord } from "@/server/secretStore";
 import { createStorageAdapter } from "@/server/storage";
 
-export const secretFilePath = (id: string) => `secrets/${id}/file`;
+export const SECRET_FILES_PREFIX = "secrets/";
 
-/** Deletes a secret's stored file. Failures are logged; the sweeper can't retry them. */
+export const secretFilePath = (id: string) =>
+  `${SECRET_FILES_PREFIX}${id}/file`;
+
+const SECRET_FILE_PATH =
+  /^secrets\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/file$/;
+
+/** The secret id a stored file belongs to, or `null` for paths `secretFilePath` doesn't make. */
+export const secretIdFromFilePath = (path: string): string | null =>
+  SECRET_FILE_PATH.exec(path)?.[1] ?? null;
+
+/** Deletes a secret's stored file. Failures are logged; the sweeper retries them later. */
 export async function deleteSecretFile(id: string): Promise<void> {
   try {
     await createStorageAdapter().delete(secretFilePath(id));
@@ -29,12 +36,7 @@ export async function deleteSecretFile(id: string): Promise<void> {
 
 /** Deletes a secret and, for file secrets, its stored file. No-op if it's already gone. */
 export async function deleteSecret(id: string): Promise<void> {
-  const [deleted] = await db
-    .delete(secrets)
-    .where(eq(secrets.id, id))
-    .returning({ type: secrets.type });
-
-  if (deleted?.type === "file") {
+  if ((await deleteSecretRecord(id)) === "file") {
     await deleteSecretFile(id);
   }
 }
@@ -122,21 +124,13 @@ export const getClientIp = (
 };
 
 /**
- * Salted hash of the client IP, so rate limits and the per-creator throttle work without storing
- * IP addresses. With `date` the hash also changes daily, which is what gets stored per secret.
+ * Salted hash of the client IP, so the rate limits (including the throttle on creating secrets)
+ * work without storing IP addresses.
  */
-export const getCreatorFingerprint = (input: {
-  ip: string;
-  date?: Date;
-}): string => {
-  const raw = input.date
-    ? `${input.ip}|${input.date.toISOString().slice(0, 10)}`
-    : input.ip;
-
-  return createHmac("sha256", env.CREATOR_FINGERPRINT_SALT)
-    .update(raw, "utf8")
+export const getCreatorFingerprint = (input: { ip: string }): string =>
+  createHmac("sha256", env.CREATOR_FINGERPRINT_SALT)
+    .update(input.ip, "utf8")
     .digest("base64url");
-};
 
 export const safeEqual = (a: string, b: string): boolean => {
   const bufA = Buffer.from(a);
@@ -163,7 +157,7 @@ const scryptAsync = (password: string, salt: Buffer) =>
 
 /**
  * The auth token is already PBKDF2 output, but it derives from a human passphrase, so it gets a
- * salted slow hash too. A leaked database then still needs PBKDF2 + scrypt per guess.
+ * salted slow hash too. Leaked secret data then still needs PBKDF2 + scrypt per guess.
  */
 export async function hashAuthToken(token: string): Promise<string> {
   const salt = randomBytes(16);
