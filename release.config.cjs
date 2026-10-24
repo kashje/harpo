@@ -6,7 +6,14 @@ module.exports = {
       "@semantic-release/commit-analyzer",
       {
         preset: "angular",
-        releaseRules: [{ type: "hotfix", release: "patch" }],
+        // Custom rules are checked first and the defaults only when none matches, so the
+        // breaking rule is repeated here: otherwise a refactor or hotfix with a
+        // `BREAKING CHANGE:` footer would only be a patch.
+        releaseRules: [
+          { breaking: true, release: "major" },
+          { type: "hotfix", release: "patch" },
+          { type: "refactor", release: "patch" },
+        ],
       },
     ],
     "@semantic-release/release-notes-generator",
