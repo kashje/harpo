@@ -1,3 +1,10 @@
+# [1.1.0-next.5](https://github.com/kashje/harpo/compare/v1.1.0-next.4...v1.1.0-next.5) (2026-10-24)
+
+
+### Features
+
+* store files in S3 and stream them chunk by chunk ([a4a0302](https://github.com/kashje/harpo/commit/a4a0302249c843cffd461f314ae77c7b7b47104e))
+
 # [1.1.0-next.4](https://github.com/kashje/harpo/compare/v1.1.0-next.3...v1.1.0-next.4) (2026-10-24)
 
 # [1.1.0-next.3](https://github.com/kashje/harpo/compare/v1.1.0-next.2...v1.1.0-next.3) (2026-10-24)
