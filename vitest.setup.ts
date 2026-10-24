@@ -5,8 +5,7 @@ config({ path: ".env.test" });
 
 vi.mock("@/server/redis", () => ({
   redis: {
-    incr: vi.fn().mockResolvedValue(1),
-    ttl: vi.fn().mockResolvedValue(-1),
-    expire: vi.fn().mockResolvedValue(1),
+    // Rate limit counter script; returning 1 keeps every request under the limit.
+    eval: vi.fn().mockResolvedValue(1),
   },
 }));

@@ -1,188 +1,355 @@
 import { describe, expect, it } from "vitest";
-import { getCaller } from "@/test/trpc";
-import {
-  encryptText,
-  generateAesKey,
-  hashPassphrase,
-} from "@/lib/secret-crypto";
-import { env } from "@/env";
+import { randomUUID } from "crypto";
 import type { TRPCError } from "@trpc/server";
 
+import { getCaller } from "@/test/trpc";
+import {
+  expireSecret,
+  findSecretRow,
+  makeTextSecretInput,
+} from "@/test/secrets";
+import {
+  decryptMeta,
+  decryptText,
+  deriveSecretKeys,
+} from "@/lib/secret-crypto";
+import {
+  MAX_PASSPHRASE_ATTEMPTS,
+  MAX_TEXT_SECRET_BYTES,
+} from "@/lib/secret-options";
+import { encodeSecretIdToken } from "@/server/api/utils/secret";
+
+const withCode = (code: TRPCError["code"]) =>
+  expect.objectContaining({ code }) as TRPCError;
+
 describe("secret router", () => {
-  describe("get secret", () => {
-    it("returns null for invalid id token", async () => {
+  describe("get", () => {
+    it("returns null for an invalid id token", async () => {
       const caller = await getCaller();
-      const result = await caller.secret.get({ id: "invalid" });
-      expect(result).toBeNull();
+      expect(await caller.secret.get({ idToken: "invalid" })).toBeNull();
+      expect(
+        await caller.secret.get({ idToken: "v1.not-valid-base64!!" }),
+      ).toBeNull();
     });
 
-    it("returns null for malformed id", async () => {
+    it("returns null for an unknown secret", async () => {
       const caller = await getCaller();
-      const result = await caller.secret.get({
-        id: "v1.not-valid-base64!!",
-      });
-      expect(result).toBeNull();
+      const idToken = encodeSecretIdToken(randomUUID());
+      expect(await caller.secret.get({ idToken })).toBeNull();
     });
-  });
 
-  describe("create and get", () => {
-    it("secret creation and retrieval", async () => {
+    it("returns metadata but never the content or the internal id", async () => {
       const caller = await getCaller();
-      const key = await generateAesKey();
-      const encrypted = await encryptText({
-        plaintext: "integration test payload",
-        key,
+      const { input, keys } = await makeTextSecretInput("top secret", {
+        meta: { name: "Test secret" },
+        maxViews: "3",
       });
+      const { idToken } = await caller.secret.create(input);
 
-      const { idToken } = await caller.secret.create({
-        encrypted,
-        name: "Test secret",
-        expiresIn: "24h",
-        maxViews: "1",
-      });
+      const got = await caller.secret.get({ idToken });
 
-      expect(idToken).toBeDefined();
-      expect(typeof idToken).toBe("string");
-
-      const got = await caller.secret.get({ id: idToken });
       expect(got).not.toBeNull();
-      expect(got?.name).toBe("Test secret");
-      expect(got?.encryptedPayload).toBeDefined();
-      expect(got?.maxViews).toBe(1);
+      expect(Object.keys(got!).sort()).toEqual(
+        [
+          "expiresAt",
+          "maxViews",
+          "meta",
+          "passphrase",
+          "type",
+          "viewCount",
+        ].sort(),
+      );
+      expect(JSON.stringify(got)).not.toContain(input.content.ciphertext);
+      expect(got?.type).toBe("text");
+      expect(got?.maxViews).toBe(3);
       expect(got?.viewCount).toBe(0);
+      expect(got?.passphrase).toBeNull();
+      expect(await decryptMeta(keys.metaKey, got!.meta)).toMatchObject({
+        name: "Test secret",
+      });
+    });
+
+    it("does not count a view", async () => {
+      const caller = await getCaller();
+      const { input } = await makeTextSecretInput();
+      const { idToken } = await caller.secret.create(input);
+
+      await caller.secret.get({ idToken });
+      await caller.secret.get({ idToken });
+
+      expect((await findSecretRow(idToken))?.viewCount).toBe(0);
+    });
+
+    it("deletes and hides an expired secret", async () => {
+      const caller = await getCaller();
+      const { input } = await makeTextSecretInput();
+      const { idToken } = await caller.secret.create(input);
+      await expireSecret(idToken);
+
+      expect(await caller.secret.get({ idToken })).toBeNull();
+      expect(await findSecretRow(idToken)).toBeNull();
     });
   });
 
-  describe("secret consumption", () => {
-    it("creates a secret with limited views and consumes it until it is deleted", async () => {
+  describe("create", () => {
+    it("stores only ciphertext and hashes", async () => {
       const caller = await getCaller();
-      const key = await generateAesKey();
-      const encrypted = await encryptText({
-        plaintext: "integration test payload with consumption",
-        key,
+      const { input } = await makeTextSecretInput("plaintext marker", {
+        meta: { name: "name marker" },
+        passphrase: "correct horse",
       });
+      const { idToken, deleteToken } = await caller.secret.create(input);
 
-      const { idToken } = await caller.secret.create({
-        encrypted,
-        name: "Test secret with consumption",
-        expiresIn: "24h",
-        maxViews: "5",
+      const row = await findSecretRow(idToken);
+      const stored = JSON.stringify(row);
+      expect(stored).not.toContain("plaintext marker");
+      expect(stored).not.toContain("name marker");
+      expect(stored).not.toContain("correct horse");
+      expect(stored).not.toContain(input.passphrase!.authToken);
+      expect(stored).not.toContain(deleteToken);
+      expect(row?.version).toBe("v2");
+    });
+
+    it("rejects content above the size limit", async () => {
+      const caller = await getCaller();
+      const { input } = await makeTextSecretInput(
+        "x".repeat(MAX_TEXT_SECRET_BYTES + 1),
+      );
+
+      await expect(caller.secret.create(input)).rejects.toThrowError(
+        withCode("BAD_REQUEST"),
+      );
+    });
+  });
+
+  describe("reveal", () => {
+    it("returns content that decrypts with the link key", async () => {
+      const caller = await getCaller();
+      const { input, keys } = await makeTextSecretInput("hello there", {
+        maxViews: "3",
       });
+      const { idToken } = await caller.secret.create(input);
 
-      const row = await caller.secret.get({ id: idToken });
-      expect(row).not.toBeNull();
-      const id = row!.id;
+      const result = await caller.secret.reveal({ idToken });
 
-      // Consume the secret 4 times
-      for (let i = 0; i < 4; i++) {
-        const consumed = await caller.secret.consume({ id });
-        expect(consumed.viewCount).toBe(i + 1);
+      expect(await decryptText(keys.contentKey, result.content)).toBe(
+        "hello there",
+      );
+      expect(result.viewCount).toBe(1);
+      expect(result.destroyed).toBe(false);
+    });
+
+    it("destroys the secret on the last view, without a grace period", async () => {
+      const caller = await getCaller();
+      const { input } = await makeTextSecretInput("once", { maxViews: "1" });
+      const { idToken } = await caller.secret.create(input);
+
+      const result = await caller.secret.reveal({ idToken });
+
+      expect(result.destroyed).toBe(true);
+      expect(await findSecretRow(idToken)).toBeNull();
+      expect(await caller.secret.get({ idToken })).toBeNull();
+      await expect(caller.secret.reveal({ idToken })).rejects.toThrowError(
+        withCode("NOT_FOUND"),
+      );
+    });
+
+    it("never hands out more views than allowed under concurrency", async () => {
+      const caller = await getCaller();
+      const { input } = await makeTextSecretInput("race", { maxViews: "3" });
+      const { idToken } = await caller.secret.create(input);
+
+      const results = await Promise.allSettled(
+        Array.from({ length: 8 }, () => caller.secret.reveal({ idToken })),
+      );
+
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(3);
+      expect(await findSecretRow(idToken)).toBeNull();
+    });
+
+    it("keeps unlimited secrets until they expire", async () => {
+      const caller = await getCaller();
+      const { input } = await makeTextSecretInput("many", {
+        maxViews: "unlimited",
+      });
+      const { idToken } = await caller.secret.create(input);
+
+      for (let i = 1; i <= 12; i++) {
+        const result = await caller.secret.reveal({ idToken });
+        expect(result.viewCount).toBe(i);
+        expect(result.destroyed).toBe(false);
       }
+    });
 
-      // Check that the secret is not deleted and that the view count is 4
-      const notDeleted = await caller.secret.get({ id: idToken });
-      expect(notDeleted).not.toBeNull();
-      expect(notDeleted?.viewCount).toBe(4);
+    it("refuses an expired secret", async () => {
+      const caller = await getCaller();
+      const { input } = await makeTextSecretInput();
+      const { idToken } = await caller.secret.create(input);
+      await expireSecret(idToken);
 
-      // Check that the secret is deleted and that the view count is 5
-      const lastConsumed = await caller.secret.consume({ id });
-      expect(lastConsumed.viewCount).toBe(5);
-      expect(lastConsumed.deleted).toBe(true);
+      await expect(caller.secret.reveal({ idToken })).rejects.toThrowError(
+        withCode("NOT_FOUND"),
+      );
+      expect(await findSecretRow(idToken)).toBeNull();
+    });
+
+    it("throws BAD_REQUEST for a malformed id token", async () => {
+      const caller = await getCaller();
+      await expect(
+        caller.secret.reveal({ idToken: "nope" }),
+      ).rejects.toThrowError(withCode("BAD_REQUEST"));
     });
   });
 
-  describe("secret destruction", () => {
-    it("creates a secret a and tags it for deletion", async () => {
+  describe("passphrase protection", () => {
+    async function createProtected() {
       const caller = await getCaller();
-      const key = await generateAesKey();
-      const encrypted = await encryptText({
-        plaintext: "integration test payload with consumption",
-        key,
+      const created = await makeTextSecretInput("protected content", {
+        passphrase: "s3cret phrase ",
+        maxViews: "3",
+      });
+      const { idToken } = await caller.secret.create(created.input);
+      const meta = await caller.secret.get({ idToken });
+      return { caller, idToken, meta, ...created };
+    }
+
+    const wrongAuthToken = async (
+      linkKey: string,
+      passphrase: { salt: string; iterations: number },
+    ) =>
+      (
+        await deriveSecretKeys({
+          linkKey,
+          passphrase: { ...passphrase, value: "wrong" },
+        })
+      ).authToken!;
+
+    it("exposes the PBKDF2 parameters but nothing to decrypt", async () => {
+      const { meta, input } = await createProtected();
+      expect(meta?.passphrase).toEqual({
+        salt: input.passphrase!.salt,
+        iterations: input.passphrase!.iterations,
+      });
+    });
+
+    it("requires the passphrase before returning content", async () => {
+      const { caller, idToken } = await createProtected();
+
+      await expect(caller.secret.reveal({ idToken })).rejects.toThrowError(
+        withCode("UNAUTHORIZED"),
+      );
+      expect((await findSecretRow(idToken))?.viewCount).toBe(0);
+    });
+
+    it("does not count a view for a wrong passphrase", async () => {
+      const { caller, idToken, linkKey, meta } = await createProtected();
+
+      await expect(
+        caller.secret.reveal({
+          idToken,
+          authToken: await wrongAuthToken(linkKey, meta!.passphrase!),
+        }),
+      ).rejects.toThrowError(withCode("UNAUTHORIZED"));
+
+      const row = await findSecretRow(idToken);
+      expect(row?.viewCount).toBe(0);
+      expect(row?.failedAttempts).toBe(1);
+    });
+
+    it("decrypts with the exact passphrase, including whitespace", async () => {
+      const { caller, idToken, linkKey, meta } = await createProtected();
+
+      const keys = await deriveSecretKeys({
+        linkKey,
+        passphrase: { ...meta!.passphrase!, value: "s3cret phrase " },
+      });
+      const result = await caller.secret.reveal({
+        idToken,
+        authToken: keys.authToken!,
       });
 
-      const { idToken } = await caller.secret.create({
-        encrypted,
-        name: "Test secret tagged for deletion",
-        expiresIn: "24h",
-        maxViews: "1",
+      expect(await decryptText(keys.contentKey, result.content)).toBe(
+        "protected content",
+      );
+    });
+
+    it("can't be decrypted with the link key alone", async () => {
+      const { caller, idToken, linkKey, keys } = await createProtected();
+      const result = await caller.secret.reveal({
+        idToken,
+        authToken: keys.authToken!,
       });
 
-      const row = await caller.secret.get({ id: idToken });
-      expect(row).not.toBeNull();
-      const id = row!.id;
+      const linkOnly = await deriveSecretKeys({ linkKey });
+      await expect(
+        decryptText(linkOnly.contentKey, result.content),
+      ).rejects.toThrow();
+    });
 
-      const res = await caller.secret.tagDeletion({ id });
-      expect(res.expiresAt).toBeDefined();
-      expect(res.expiresAt).toBeInstanceOf(Date);
-      expect(res.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    it("destroys the secret after too many wrong attempts", async () => {
+      const { caller, idToken, linkKey, meta } = await createProtected();
+      const authToken = await wrongAuthToken(linkKey, meta!.passphrase!);
 
-      const notDeleted = await caller.secret.get({ id: idToken });
-      expect(notDeleted).not.toBeNull();
-      expect(notDeleted?.taggedDeletionAt).toBeDefined();
-      expect(notDeleted?.taggedDeletionAt).toBeInstanceOf(Date);
+      for (let i = 1; i < MAX_PASSPHRASE_ATTEMPTS; i++) {
+        await expect(
+          caller.secret.reveal({ idToken, authToken }),
+        ).rejects.toThrowError(withCode("UNAUTHORIZED"));
+      }
+      await expect(
+        caller.secret.reveal({ idToken, authToken }),
+      ).rejects.toThrowError(withCode("FORBIDDEN"));
 
-      // Wait the time set in the environment variable NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS (default 30 seconds)
-      await new Promise(
-        (resolve) =>
-          setTimeout(
-            resolve,
-            env.NEXT_PUBLIC_LAST_VIEW_COUNTDOWN_SECONDS * 1000 + 1000,
-          ), // Add 1 second to be sure
-      );
-
-      const deleted = caller.secret.get({ id: idToken });
-      // Expect error because the secret is deleted
-      await expect(deleted).rejects.toThrowError(
-        expect.objectContaining({
-          message: "Secret is expired",
-        }) as TRPCError,
-      );
+      expect(await findSecretRow(idToken)).toBeNull();
     });
   });
 
-  describe("secret password protection", () => {
-    it("creates a secret with a password and checks it", async () => {
+  describe("delete", () => {
+    it("deletes an unviewed secret with the delete token", async () => {
       const caller = await getCaller();
-      const key = await generateAesKey();
-      const encrypted = await encryptText({
-        plaintext: "integration test payload with password",
-        key,
+      const { input } = await makeTextSecretInput();
+      const { idToken, deleteToken } = await caller.secret.create(input);
+
+      expect(await caller.secret.delete({ idToken, deleteToken })).toEqual({
+        success: true,
       });
+      expect(await findSecretRow(idToken)).toBeNull();
+    });
 
-      const passphraseHash = await hashPassphrase("test-password");
-
-      const { idToken } = await caller.secret.create({
-        encrypted,
-        name: "Test secret with password",
-        expiresIn: "24h",
-        maxViews: "1",
-        passphrase: passphraseHash,
-      });
-
-      const row = await caller.secret.get({ id: idToken });
-      expect(row).not.toBeNull();
-      expect((row as Record<string, unknown>).passwordHash).toBeUndefined();
-
-      const id = row!.id;
-
-      const rightPassword = await caller.secret.checkPassword({
-        id,
-        password: passphraseHash,
-      });
-
-      expect(rightPassword.valid).toBe(true);
-
-      const wrongPassword = caller.secret.checkPassword({
-        id,
-        password: "wrong-password",
-      });
-
-      // Expect error because the password is wrong
-      await expect(wrongPassword).rejects.toThrowError(
-        expect.objectContaining({
-          message: "Invalid password",
-        }) as TRPCError,
+    it("rejects a wrong delete token", async () => {
+      const caller = await getCaller();
+      const { input } = await makeTextSecretInput();
+      const { idToken } = await caller.secret.create(input);
+      const other = await caller.secret.create(
+        (await makeTextSecretInput()).input,
       );
+
+      await expect(
+        caller.secret.delete({ idToken, deleteToken: other.deleteToken }),
+      ).rejects.toThrowError(withCode("FORBIDDEN"));
+      expect(await findSecretRow(idToken)).not.toBeNull();
+    });
+
+    it("refuses once the secret has been viewed", async () => {
+      const caller = await getCaller();
+      const { input } = await makeTextSecretInput("x", { maxViews: "3" });
+      const { idToken, deleteToken } = await caller.secret.create(input);
+      await caller.secret.reveal({ idToken });
+
+      await expect(
+        caller.secret.delete({ idToken, deleteToken }),
+      ).rejects.toThrowError(withCode("FORBIDDEN"));
+      expect(await findSecretRow(idToken)).not.toBeNull();
+    });
+
+    it("throws NOT_FOUND for a secret that's gone", async () => {
+      const caller = await getCaller();
+      const { input } = await makeTextSecretInput();
+      const { idToken, deleteToken } = await caller.secret.create(input);
+      await caller.secret.reveal({ idToken });
+
+      await expect(
+        caller.secret.delete({ idToken, deleteToken }),
+      ).rejects.toThrowError(withCode("NOT_FOUND"));
     });
   });
 });

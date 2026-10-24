@@ -1,23 +1,66 @@
-export type EncryptedPayload = {
+/**
+ * Client-side encryption for Harpo secrets (payload format "v2").
+ *
+ * - A random 32-byte *link key* lives only in the URL fragment and never reaches the server.
+ * - The metadata (name, file name, MIME type) is encrypted with a key derived from the link key.
+ * - The content is encrypted with a key derived from the link key *and*, when set, the passphrase.
+ *   PBKDF2 turns the passphrase into 64 bytes: the first half goes into the content key, the second
+ *   half is an *auth token* the server stores a slow hash of. The server checks the auth token
+ *   before handing out the ciphertext, so a wrong passphrase never costs a view, and the content
+ *   can't be decrypted from the link alone.
+ */
+import {
+  AES_GCM_IV_BYTES,
+  LINK_KEY_BYTES,
+  PASSPHRASE_SALT_BYTES,
+} from "./secret-options";
+
+export const CRYPTO_VERSION = "v2" as const;
+
+const META_KEY_INFO = "harpo/v2/meta";
+const CONTENT_KEY_INFO = "harpo/v2/content";
+
+export type Bytes = Uint8Array<ArrayBuffer>;
+
+export type EncryptedBlob = {
   ciphertext: string;
   iv: string;
-  version: "v1";
 };
 
-const base64urlEncode = (bytes: Uint8Array): string => {
-  let binary = "";
-  // eslint-disable-next-line @typescript-eslint/prefer-for-of
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]!);
-  }
+export type SecretMeta = {
+  name?: string;
+  fileName?: string;
+  mimeType?: string;
+};
 
+export type PassphraseParams = {
+  salt: string;
+  iterations: number;
+};
+
+export type SecretKeys = {
+  metaKey: CryptoKey;
+  contentKey: CryptoKey;
+  /** Proof of knowing the passphrase, sent to the server. `null` without a passphrase. */
+  authToken: string | null;
+};
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+export const base64urlEncode = (bytes: Uint8Array): string => {
+  let binary = "";
+  // Chunked to keep large files fast and below the argument limit of fromCharCode.
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
   return btoa(binary)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
 };
 
-const base64urlDecode = (input: string): Uint8Array => {
+export const base64urlDecode = (input: string): Bytes => {
   const padLength = (4 - (input.length % 4)) % 4;
   const padded =
     input.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(padLength);
@@ -29,167 +72,144 @@ const base64urlDecode = (input: string): Uint8Array => {
   return bytes;
 };
 
-export const generateAesKey = async (): Promise<CryptoKey> => {
-  return crypto.subtle.generateKey(
+const randomBytes = (length: number): Bytes =>
+  crypto.getRandomValues(new Uint8Array(length));
+
+/** Generates the key that goes into the URL fragment. */
+export const generateLinkKey = (): string =>
+  base64urlEncode(randomBytes(LINK_KEY_BYTES));
+
+export const generatePassphraseSalt = (): string =>
+  base64urlEncode(randomBytes(PASSPHRASE_SALT_BYTES));
+
+const deriveAesKey = async (ikm: Bytes, info: string): Promise<CryptoKey> => {
+  const baseKey = await crypto.subtle.importKey("raw", ikm, "HKDF", false, [
+    "deriveKey",
+  ]);
+  return crypto.subtle.deriveKey(
     {
-      name: "AES-GCM",
-      length: 256,
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: new Uint8Array(0),
+      info: encoder.encode(info),
     },
-    true,
+    baseKey,
+    { name: "AES-GCM", length: 256 },
+    false,
     ["encrypt", "decrypt"],
   );
 };
 
-export const exportAesKey = async (key: CryptoKey): Promise<string> => {
-  const raw = new Uint8Array(await crypto.subtle.exportKey("raw", key));
-  return base64urlEncode(raw);
-};
+export const deriveSecretKeys = async (params: {
+  linkKey: string;
+  passphrase?: (PassphraseParams & { value: string }) | null;
+}): Promise<SecretKeys> => {
+  const linkKeyBytes = base64urlDecode(params.linkKey);
+  if (linkKeyBytes.length !== LINK_KEY_BYTES) {
+    throw new Error(
+      "The decryption key in the link is invalid. Make sure you used the full link.",
+    );
+  }
 
-export const importAesKey = async (
-  keyBase64url: string,
-): Promise<CryptoKey> => {
-  const rawBytes = base64urlDecode(keyBase64url);
-  return crypto.subtle.importKey(
-    "raw",
-    rawBytes as unknown as BufferSource,
-    {
-      name: "AES-GCM",
-    },
-    true,
-    ["encrypt", "decrypt"],
+  let passphraseKeyBytes: Bytes = new Uint8Array(0);
+  let authToken: string | null = null;
+
+  if (params.passphrase) {
+    const passphraseKey = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(params.passphrase.value),
+      "PBKDF2",
+      false,
+      ["deriveBits"],
+    );
+    const bits = new Uint8Array(
+      await crypto.subtle.deriveBits(
+        {
+          name: "PBKDF2",
+          hash: "SHA-256",
+          salt: base64urlDecode(params.passphrase.salt),
+          iterations: params.passphrase.iterations,
+        },
+        passphraseKey,
+        512,
+      ),
+    );
+    passphraseKeyBytes = bits.slice(0, 32);
+    authToken = base64urlEncode(bits.slice(32));
+  }
+
+  const contentIkm = new Uint8Array(
+    linkKeyBytes.length + passphraseKeyBytes.length,
   );
-};
-
-export const encryptText = async (params: {
-  plaintext: string;
-  key: CryptoKey;
-}): Promise<EncryptedPayload> => {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(params.plaintext);
-
-  const ivBytes = crypto.getRandomValues(new Uint8Array(12));
-
-  const ciphertextBytes = new Uint8Array(
-    await crypto.subtle.encrypt(
-      {
-        name: "AES-GCM",
-        iv: ivBytes as unknown as BufferSource,
-      },
-      params.key,
-      data as unknown as BufferSource,
-    ),
-  );
+  contentIkm.set(linkKeyBytes);
+  contentIkm.set(passphraseKeyBytes, linkKeyBytes.length);
 
   return {
-    ciphertext: base64urlEncode(ciphertextBytes),
-    iv: base64urlEncode(ivBytes),
-    version: "v1",
+    metaKey: await deriveAesKey(linkKeyBytes, META_KEY_INFO),
+    contentKey: await deriveAesKey(contentIkm, CONTENT_KEY_INFO),
+    authToken,
   };
 };
 
-export const decryptText = async (params: {
-  encrypted: EncryptedPayload;
-  key: CryptoKey;
-}): Promise<string> => {
-  const ivBytes = base64urlDecode(params.encrypted.iv);
-  const ciphertextBytes = base64urlDecode(params.encrypted.ciphertext);
+export const encryptBytes = async (
+  key: CryptoKey,
+  data: Bytes,
+): Promise<{ ciphertext: Bytes; iv: Bytes }> => {
+  const iv = randomBytes(AES_GCM_IV_BYTES);
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data),
+  );
+  return { ciphertext, iv };
+};
 
-  const plaintextBytes = new Uint8Array(
-    await crypto.subtle.decrypt(
-      {
-        name: "AES-GCM",
-        iv: ivBytes as unknown as BufferSource,
-      },
-      params.key,
-      ciphertextBytes as unknown as BufferSource,
+export const decryptBytes = async (
+  key: CryptoKey,
+  ciphertext: Bytes,
+  iv: Bytes,
+): Promise<Bytes> =>
+  new Uint8Array(
+    await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext),
+  );
+
+export const encryptText = async (
+  key: CryptoKey,
+  plaintext: string,
+): Promise<EncryptedBlob> => {
+  const { ciphertext, iv } = await encryptBytes(key, encoder.encode(plaintext));
+  return { ciphertext: base64urlEncode(ciphertext), iv: base64urlEncode(iv) };
+};
+
+export const decryptText = async (
+  key: CryptoKey,
+  blob: EncryptedBlob,
+): Promise<string> =>
+  decoder.decode(
+    await decryptBytes(
+      key,
+      base64urlDecode(blob.ciphertext),
+      base64urlDecode(blob.iv),
     ),
   );
 
-  const decoder = new TextDecoder();
-  return decoder.decode(plaintextBytes);
+export const encryptMeta = (key: CryptoKey, meta: SecretMeta) =>
+  encryptText(key, JSON.stringify(meta));
+
+export const decryptMeta = async (
+  key: CryptoKey,
+  blob: EncryptedBlob,
+): Promise<SecretMeta> => {
+  const parsed = JSON.parse(await decryptText(key, blob)) as Record<
+    string,
+    unknown
+  >;
+  const pick = (value: unknown) =>
+    typeof value === "string" ? value : undefined;
+  return {
+    name: pick(parsed.name),
+    fileName: pick(parsed.fileName),
+    mimeType: pick(parsed.mimeType),
+  };
 };
 
-export type EncryptedFilePayload = {
-  iv: string;
-  version: "v1";
-  type: "file";
-  originalName: string;
-  mimeType: string;
-};
-
-export const encryptFile = async (params: {
-  file: File;
-  key: CryptoKey;
-}): Promise<{ encryptedBytes: Uint8Array; iv: Uint8Array }> => {
-  const fileBytes = new Uint8Array(await params.file.arrayBuffer());
-  const ivBytes = crypto.getRandomValues(new Uint8Array(12));
-
-  const encryptedBytes = new Uint8Array(
-    await crypto.subtle.encrypt(
-      {
-        name: "AES-GCM",
-        iv: ivBytes as unknown as BufferSource,
-      },
-      params.key,
-      fileBytes as unknown as BufferSource,
-    ),
-  );
-
-  return { encryptedBytes, iv: ivBytes };
-};
-
-export const decryptFile = async (params: {
-  encryptedBytes: Uint8Array;
-  iv: Uint8Array;
-  key: CryptoKey;
-}): Promise<Uint8Array> => {
-  const decryptedBytes = new Uint8Array(
-    await crypto.subtle.decrypt(
-      {
-        name: "AES-GCM",
-        iv: params.iv as unknown as BufferSource,
-      },
-      params.key,
-      params.encryptedBytes as unknown as BufferSource,
-    ),
-  );
-
-  return decryptedBytes;
-};
-
-export const base64urlEncodeBytes = (bytes: Uint8Array): string => {
-  let binary = "";
-  // eslint-disable-next-line @typescript-eslint/prefer-for-of
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]!);
-  }
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-};
-
-export const base64urlDecodeBytes = (input: string): Uint8Array => {
-  const padLength = (4 - (input.length % 4)) % 4;
-  const padded =
-    input.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(padLength);
-  const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-};
-
-/**
- * Hash a passphrase client-side with SHA-256 (hex).
- * The server only ever receives and stores this hash, never the plaintext.
- */
-export async function hashPassphrase(passphrase: string): Promise<string> {
-  const data = new TextEncoder().encode(passphrase);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  const bytes = new Uint8Array(digest);
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+/** UTF-8 size of a string, for enforcing size limits before encrypting. */
+export const utf8ByteLength = (value: string) => encoder.encode(value).length;

@@ -1,59 +1,66 @@
 import { Readable } from "stream";
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
 
 import { TRPCError } from "@trpc/server";
 import { env } from "@/env";
 
-import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
+import { AES_GCM_TAG_BYTES } from "@/lib/secret-options";
+import {
+  createSecretProcedure,
+  createTRPCRouter,
+  publicProcedure,
+} from "@/server/api/trpc";
 import { secrets } from "@/server/db/schemas/secrets";
 import { createStorageAdapter } from "@/server/storage";
 import {
-  decodeSecretIdToken,
+  deleteSecret,
   encodeSecretIdToken,
-  getCreatorFingerprint,
+  secretFilePath,
 } from "@/server/api/utils/secret";
+import {
+  buildNewSecretValues,
+  claimView,
+  decodeIdTokenOrThrow,
+} from "@/server/api/utils/secretAccess";
+import {
+  authTokenSchema,
+  idTokenSchema,
+  ivSchema,
+  lifetimeSchema,
+  metaSchema,
+  passphraseSchema,
+} from "@/server/api/utils/schemas";
 
-const expiresInMs = {
-  "1h": 60 * 60 * 1000,
-  "24h": 24 * 60 * 60 * 1000,
-  "3d": 3 * 24 * 60 * 60 * 1000,
-  "7d": 7 * 24 * 60 * 60 * 1000,
-  "30d": 30 * 24 * 60 * 60 * 1000,
-} as const;
-
-const maxViewsMap = {
-  "1": 1,
-  "3": 3,
-  "5": 5,
-  "10": 10,
-  unlimited: 0,
-} as const;
-
-const UploadInputSchema = z.object({
+const UploadInputSchema = lifetimeSchema.extend({
   encryptedBytes: z.string().min(1),
-  iv: z.string().min(1),
-  originalName: z.string().min(1).max(255),
-  mimeType: z.string().min(1).max(255),
-  name: z.string().max(255).optional(),
-  passphrase: z.string().optional(),
-  expiresIn: z.enum(["1h", "24h", "3d", "7d", "30d"]),
-  maxViews: z.enum(["1", "3", "5", "10", "unlimited"]),
+  iv: ivSchema,
+  meta: metaSchema,
+  passphrase: passphraseSchema.optional(),
 });
 
 const UploadOutputSchema = z.object({
   idToken: z.string().min(1),
+  deleteToken: z.string().min(1),
 });
 
+async function readStream(readable: Readable): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of readable) {
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
 export const storageRouter = createTRPCRouter({
-  upload: publicProcedure
+  upload: createSecretProcedure
     .input(UploadInputSchema)
     .output(UploadOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const maxSize = env.MAX_UPLOAD_SIZE_BYTES;
-      const byteLength = Buffer.byteLength(input.encryptedBytes, "base64");
-      if (byteLength > maxSize) {
+      // The ciphertext is the file plus the AES-GCM tag.
+      const byteLength = Buffer.byteLength(input.encryptedBytes, "base64url");
+      if (byteLength > maxSize + AES_GCM_TAG_BYTES) {
         throw new TRPCError({
           code: "PAYLOAD_TOO_LARGE",
           message: `File exceeds maximum allowed size of ${(maxSize / 1024 / 1024).toFixed(0)} MB`,
@@ -61,11 +68,12 @@ export const storageRouter = createTRPCRouter({
       }
 
       const secretId = randomUUID();
-      const storagePath = `secrets/${secretId}/file`;
+      const storagePath = secretFilePath(secretId);
 
-      const fileBuffer = Buffer.from(input.encryptedBytes, "base64url");
       try {
-        const readable = Readable.from(fileBuffer);
+        const readable = Readable.from(
+          Buffer.from(input.encryptedBytes, "base64url"),
+        );
         await createStorageAdapter().upload(storagePath, readable);
       } catch (err) {
         console.error("[storage.upload] Storage error:", err);
@@ -75,34 +83,19 @@ export const storageRouter = createTRPCRouter({
         });
       }
 
-      const now = Date.now();
-      const ipHeader = ctx.headers.get("x-forwarded-for");
-      const ip = ipHeader?.split(",")[0]?.trim() ?? "";
-      const userAgent = ctx.headers.get("user-agent") ?? "";
-
-      const encryptedPayload = JSON.stringify({
-        version: "v1",
-        type: "file",
-        iv: input.iv,
-        originalName: input.originalName,
-        mimeType: input.mimeType,
-      });
-
       try {
+        const { deleteToken, values } = await buildNewSecretValues({
+          ...input,
+          clientIp: ctx.clientIp,
+        });
+
         const [inserted] = await ctx.db
           .insert(secrets)
           .values({
+            ...values,
             id: secretId,
-            name: input.name?.trim() ?? input.originalName,
-            identification: getCreatorFingerprint({
-              ip,
-              userAgent,
-              date: new Date(now),
-            }),
-            encryptedPayload,
-            maxViews: maxViewsMap[input.maxViews],
-            passwordHash: input.passphrase ?? null,
-            expiresAt: new Date(now + expiresInMs[input.expiresIn]),
+            type: "file",
+            contentIv: input.iv,
           })
           .returning({ id: secrets.id });
 
@@ -110,7 +103,7 @@ export const storageRouter = createTRPCRouter({
           throw new Error("Insert returned no rows");
         }
 
-        return { idToken: encodeSecretIdToken(inserted.id) };
+        return { idToken: encodeSecretIdToken(inserted.id), deleteToken };
       } catch (err) {
         console.error("[storage.upload] DB error:", err);
         try {
@@ -125,118 +118,45 @@ export const storageRouter = createTRPCRouter({
       }
     }),
 
+  /** Counts a view and returns the encrypted file. The last view deletes the secret and file. */
   download: publicProcedure
-    .input(z.object({ idToken: z.string().min(1) }))
-    .output(z.object({ encryptedBytes: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      let secretId: string;
+    .input(
+      z.object({
+        idToken: idTokenSchema,
+        authToken: authTokenSchema.optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const secretId = decodeIdTokenOrThrow(input.idToken);
+      const view = await claimView({
+        id: secretId,
+        type: "file",
+        authToken: input.authToken,
+      });
+
+      let fileBytes: Buffer;
       try {
-        secretId = decodeSecretIdToken(input.idToken);
-      } catch {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Invalid idToken",
-        });
-      }
-
-      const row = await ctx.db
-        .select({
-          id: secrets.id,
-          viewCount: secrets.viewCount,
-          maxViews: secrets.maxViews,
-          expiresAt: secrets.expiresAt,
-        })
-        .from(secrets)
-        .where(eq(secrets.id, secretId))
-        .limit(1)
-        .then((rows) => rows[0] ?? null);
-
-      if (!row) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Secret not found",
-        });
-      }
-
-      if (row.expiresAt.getTime() <= Date.now()) {
-        await ctx.db.delete(secrets).where(eq(secrets.id, secretId));
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Secret has expired",
-        });
-      }
-
-      const hasViewLimit = row.maxViews >= 1;
-      if (hasViewLimit && row.viewCount >= row.maxViews) {
-        await ctx.db.delete(secrets).where(eq(secrets.id, secretId));
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Secret has reached the maximum number of views",
-        });
-      }
-
-      try {
-        const storagePath = `secrets/${secretId}/file`;
-        const storage = createStorageAdapter();
-        const readable = await storage.download(storagePath);
-
-        const chunks: Buffer[] = [];
-        await new Promise<void>((resolve, reject) => {
-          readable.on("data", (chunk: Buffer) => chunks.push(chunk));
-          readable.on("end", resolve);
-          readable.on("error", reject);
-        });
-        const fileBytes = Buffer.concat(chunks);
-
-        return { encryptedBytes: fileBytes.toString("base64url") };
+        fileBytes = await readStream(
+          await createStorageAdapter().download(secretFilePath(secretId)),
+        );
       } catch (err) {
-        if (err instanceof TRPCError) throw err;
         console.error("[storage.download] Storage error:", err);
+        if (view.isLastView) await deleteSecret(secretId);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to retrieve file",
         });
       }
-    }),
 
-  delete: publicProcedure
-    .input(z.object({ idToken: z.string().min(1) }))
-    .output(z.object({ success: z.literal(true) }))
-    .mutation(async ({ ctx, input }) => {
-      let secretId: string;
-      try {
-        secretId = decodeSecretIdToken(input.idToken);
-      } catch {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Invalid idToken",
-        });
-      }
+      if (view.isLastView) await deleteSecret(secretId);
 
-      const row = await ctx.db
-        .select({ id: secrets.id })
-        .from(secrets)
-        .where(eq(secrets.id, secretId))
-        .limit(1)
-        .then((rows) => rows[0] ?? null);
-
-      if (!row) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Secret not found",
-        });
-      }
-
-      try {
-        const storagePath = `secrets/${secretId}/file`;
-        await createStorageAdapter().delete(storagePath);
-      } catch (err) {
-        console.error("[storage.delete] Storage error:", err);
-      }
-
-      await ctx.db.delete(secrets).where(eq(secrets.id, secretId));
-
-      return { success: true as const };
+      return {
+        encryptedBytes: fileBytes.toString("base64url"),
+        iv: view.contentIv,
+        viewCount: view.viewCount,
+        maxViews: view.maxViews,
+        destroyed: view.isLastView,
+      };
     }),
 });
 

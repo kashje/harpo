@@ -1,3 +1,4 @@
+import { env } from "@/env";
 import { HydrateClient } from "@/trpc/server";
 import { SecretForm } from "./_components/secret-form";
 import { TrustBadges } from "./_components/trust-badges";
@@ -37,7 +38,7 @@ export default function AppPage() {
               </div>
 
               <div className="w-full flex-1 pb-20 lg:max-w-lg lg:pb-0">
-                <SecretForm />
+                <SecretForm maxUploadBytes={env.MAX_UPLOAD_SIZE_BYTES} />
               </div>
             </div>
           </div>

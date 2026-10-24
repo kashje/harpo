@@ -1,235 +1,221 @@
 import { describe, expect, it } from "vitest";
-import { getCaller } from "@/test/trpc";
-import {
-  encryptFile,
-  generateAesKey,
-  base64urlEncodeBytes,
-} from "@/lib/secret-crypto";
+import { existsSync } from "fs";
+import { dirname, join } from "path";
+import { randomUUID } from "crypto";
 import type { TRPCError } from "@trpc/server";
 
-type UploadOverrides = {
-  name?: string;
-  expiresIn?: "1h" | "24h" | "3d" | "7d" | "30d";
-  maxViews?: "1" | "3" | "5" | "10" | "unlimited";
-  passphrase?: string;
-};
+import { env } from "@/env";
+import { getCaller } from "@/test/trpc";
+import {
+  expireSecret,
+  findSecretRow,
+  makeFileSecretInput,
+  makeTextSecretInput,
+} from "@/test/secrets";
+import {
+  base64urlDecode,
+  decryptBytes,
+  decryptMeta,
+  deriveSecretKeys,
+} from "@/lib/secret-crypto";
+import {
+  decodeSecretIdToken,
+  encodeSecretIdToken,
+  secretFilePath,
+} from "@/server/api/utils/secret";
 
-async function makeUploadInput(
-  content = "test file content",
-  overrides?: UploadOverrides,
-) {
-  const key = await generateAesKey();
-  const file = new File([content], "test-file.txt", { type: "text/plain" });
-  const { encryptedBytes, iv } = await encryptFile({ file, key });
-  return {
-    encryptedBytes: base64urlEncodeBytes(encryptedBytes),
-    iv: base64urlEncodeBytes(iv),
-    originalName: file.name,
-    mimeType: file.type,
-    expiresIn: "24h" as const,
-    maxViews: "1" as const,
-    ...overrides,
-  };
-}
+const withCode = (code: TRPCError["code"]) =>
+  expect.objectContaining({ code }) as TRPCError;
+
+const storedPath = (idToken: string) =>
+  join(env.STORAGE_BASE_PATH, secretFilePath(decodeSecretIdToken(idToken)));
+
+const storedFileExists = (idToken: string) => existsSync(storedPath(idToken));
 
 describe("storage router", () => {
   describe("upload", () => {
-    it("returns an idToken on successful upload", async () => {
+    it("returns an idToken and deleteToken and stores the file", async () => {
       const caller = await getCaller();
-      const result = await caller.storage.upload(await makeUploadInput());
+      const { input } = await makeFileSecretInput();
 
-      expect(result).toBeDefined();
-      expect(typeof result.idToken).toBe("string");
-      expect(result.idToken.startsWith("v1.")).toBe(true);
-    });
-
-    it("stores the file so it can be downloaded afterwards", async () => {
-      const caller = await getCaller();
-      const input = await makeUploadInput("roundtrip file content", {
-        maxViews: "5",
-      });
-
-      const { idToken } = await caller.storage.upload(input);
-      const { encryptedBytes: downloaded } = await caller.storage.download({
-        idToken,
-      });
-
-      expect(downloaded).toBe(input.encryptedBytes);
-    });
-
-    it("accepts an optional name that overrides the filename label", async () => {
-      const caller = await getCaller();
-      const { idToken } = await caller.storage.upload(
-        await makeUploadInput("named file content", { name: "My Custom Name" }),
-      );
+      const { idToken, deleteToken } = await caller.storage.upload(input);
 
       expect(typeof idToken).toBe("string");
+      expect(typeof deleteToken).toBe("string");
+      expect(storedFileExists(idToken)).toBe(true);
+    });
+
+    it("keeps the file name encrypted", async () => {
+      const caller = await getCaller();
+      const { input, keys } = await makeFileSecretInput("data", {
+        meta: { fileName: "prod-credentials.env", mimeType: "text/plain" },
+      });
+      const { idToken } = await caller.storage.upload(input);
+
+      expect(JSON.stringify(await findSecretRow(idToken))).not.toContain(
+        "prod-credentials",
+      );
+
+      const got = await caller.secret.get({ idToken });
+      expect(got?.type).toBe("file");
+      expect(await decryptMeta(keys.metaKey, got!.meta)).toMatchObject({
+        fileName: "prod-credentials.env",
+        mimeType: "text/plain",
+      });
     });
 
     it("rejects a file that exceeds MAX_UPLOAD_SIZE_BYTES", async () => {
       const caller = await getCaller();
+      const { input } = await makeFileSecretInput();
+      // File limit + AES-GCM tag is allowed; one byte more is not.
+      const oversized = Buffer.alloc(
+        env.MAX_UPLOAD_SIZE_BYTES + 17,
+        "x",
+      ).toString("base64url");
 
-      const { env } = await import("@/env");
-      const oversizedBuffer = Buffer.alloc(env.MAX_UPLOAD_SIZE_BYTES + 1, "x");
-      const oversizedBytes = oversizedBuffer.toString("base64url");
-
-      const input = await makeUploadInput();
-      const promise = caller.storage.upload({
-        ...input,
-        encryptedBytes: oversizedBytes,
-      });
-
-      await expect(promise).rejects.toThrowError(
-        expect.objectContaining({ code: "PAYLOAD_TOO_LARGE" }) as TRPCError,
-      );
+      await expect(
+        caller.storage.upload({ ...input, encryptedBytes: oversized }),
+      ).rejects.toThrowError(withCode("PAYLOAD_TOO_LARGE"));
     });
   });
 
   describe("download", () => {
-    it("returns the uploaded bytes for a valid idToken", async () => {
+    it("returns bytes that decrypt to the original file and counts a view", async () => {
       const caller = await getCaller();
-      const input = await makeUploadInput("secret file data", {
+      const { input, keys } = await makeFileSecretInput("secret file data", {
         maxViews: "5",
       });
-
       const { idToken } = await caller.storage.upload(input);
-      const { encryptedBytes: result } = await caller.storage.download({
-        idToken,
-      });
 
-      expect(result).toBe(input.encryptedBytes);
+      const result = await caller.storage.download({ idToken });
+      const bytes = await decryptBytes(
+        keys.contentKey,
+        base64urlDecode(result.encryptedBytes),
+        base64urlDecode(result.iv),
+      );
+
+      expect(new TextDecoder().decode(bytes)).toBe("secret file data");
+      expect(result.viewCount).toBe(1);
+      expect(result.destroyed).toBe(false);
+    });
+
+    it("deletes the secret and its file on the last download", async () => {
+      const caller = await getCaller();
+      const { input } = await makeFileSecretInput("once", { maxViews: "1" });
+      const { idToken } = await caller.storage.upload(input);
+
+      const result = await caller.storage.download({ idToken });
+
+      expect(result.destroyed).toBe(true);
+      expect(await findSecretRow(idToken)).toBeNull();
+      expect(storedFileExists(idToken)).toBe(false);
+      expect(existsSync(dirname(storedPath(idToken)))).toBe(false);
+      await expect(caller.storage.download({ idToken })).rejects.toThrowError(
+        withCode("NOT_FOUND"),
+      );
+    });
+
+    it("never hands out more downloads than allowed under concurrency", async () => {
+      const caller = await getCaller();
+      const { input } = await makeFileSecretInput("race", { maxViews: "3" });
+      const { idToken } = await caller.storage.upload(input);
+
+      const results = await Promise.allSettled(
+        Array.from({ length: 8 }, () => caller.storage.download({ idToken })),
+      );
+
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(3);
+      expect(storedFileExists(idToken)).toBe(false);
+    });
+
+    it("requires the passphrase", async () => {
+      const caller = await getCaller();
+      const { input, linkKey } = await makeFileSecretInput("locked", {
+        passphrase: "pw",
+        maxViews: "3",
+      });
+      const { idToken } = await caller.storage.upload(input);
+
+      await expect(caller.storage.download({ idToken })).rejects.toThrowError(
+        withCode("UNAUTHORIZED"),
+      );
+
+      const keys = await deriveSecretKeys({
+        linkKey,
+        passphrase: {
+          value: "pw",
+          salt: input.passphrase!.salt,
+          iterations: input.passphrase!.iterations,
+        },
+      });
+      const result = await caller.storage.download({
+        idToken,
+        authToken: keys.authToken!,
+      });
+      expect(result.viewCount).toBe(1);
+    });
+
+    it("deletes the secret and its file when it has expired", async () => {
+      const caller = await getCaller();
+      const { input } = await makeFileSecretInput();
+      const { idToken } = await caller.storage.upload(input);
+      await expireSecret(idToken);
+
+      await expect(caller.storage.download({ idToken })).rejects.toThrowError(
+        withCode("NOT_FOUND"),
+      );
+      expect(await findSecretRow(idToken)).toBeNull();
+      expect(storedFileExists(idToken)).toBe(false);
+    });
+
+    it("removes the file when an expired secret is opened", async () => {
+      const caller = await getCaller();
+      const { input } = await makeFileSecretInput();
+      const { idToken } = await caller.storage.upload(input);
+      await expireSecret(idToken);
+
+      expect(await caller.secret.get({ idToken })).toBeNull();
+      expect(storedFileExists(idToken)).toBe(false);
+    });
+
+    it("rejects downloading a text secret", async () => {
+      const caller = await getCaller();
+      const { idToken } = await caller.secret.create(
+        (await makeTextSecretInput()).input,
+      );
+
+      await expect(caller.storage.download({ idToken })).rejects.toThrowError(
+        withCode("BAD_REQUEST"),
+      );
     });
 
     it("throws BAD_REQUEST for a malformed idToken", async () => {
       const caller = await getCaller();
-
       await expect(
         caller.storage.download({ idToken: "not-a-real-token" }),
-      ).rejects.toThrowError(
-        expect.objectContaining({ code: "BAD_REQUEST" }) as TRPCError,
-      );
-    });
-
-    it("throws NOT_FOUND when the secret does not exist in the db", async () => {
-      const caller = await getCaller();
-
-      const { encodeSecretIdToken } = await import("@/server/api/utils/secret");
-      const { randomUUID } = await import("crypto");
-      const ghostToken = encodeSecretIdToken(randomUUID());
-
-      await expect(
-        caller.storage.download({ idToken: ghostToken }),
-      ).rejects.toThrowError(
-        expect.objectContaining({ code: "NOT_FOUND" }) as TRPCError,
-      );
-    });
-
-    it("throws FORBIDDEN and deletes the secret when it has expired", async () => {
-      const caller = await getCaller();
-
-      const { db } = await import("@/server/db");
-      const { secrets } = await import("@/server/db/schemas/secrets");
-      const { encodeSecretIdToken } = await import("@/server/api/utils/secret");
-      const { randomUUID } = await import("crypto");
-
-      const secretId = randomUUID();
-      await db.insert(secrets).values({
-        id: secretId,
-        name: "expired-file",
-        identification: "test",
-        encryptedPayload: JSON.stringify({
-          version: "v1",
-          type: "file",
-          iv: "iv",
-          originalName: "file.txt",
-          mimeType: "text/plain",
-        }),
-        maxViews: 1,
-        passwordHash: null,
-        expiresAt: new Date(Date.now() - 1000), // already expired
-      });
-
-      const idToken = encodeSecretIdToken(secretId);
-
-      await expect(caller.storage.download({ idToken })).rejects.toThrowError(
-        expect.objectContaining({ code: "FORBIDDEN" }) as TRPCError,
-      );
-    });
-
-    it("throws FORBIDDEN and deletes the secret when max views are reached", async () => {
-      const caller = await getCaller();
-
-      const { db } = await import("@/server/db");
-      const { secrets } = await import("@/server/db/schemas/secrets");
-      const { encodeSecretIdToken } = await import("@/server/api/utils/secret");
-      const { randomUUID } = await import("crypto");
-
-      const secretId = randomUUID();
-
-      await db.insert(secrets).values({
-        id: secretId,
-        name: "maxed-out-file",
-        identification: "test",
-        encryptedPayload: "{}",
-        maxViews: 1,
-        viewCount: 1, // already at limit
-        passwordHash: null,
-        expiresAt: new Date(Date.now() + 60_000),
-      });
-
-      const idToken = encodeSecretIdToken(secretId);
-
-      await expect(caller.storage.download({ idToken })).rejects.toThrowError(
-        expect.objectContaining({ code: "FORBIDDEN" }) as TRPCError,
-      );
-    });
-  });
-
-  describe("delete", () => {
-    it("removes the secret and returns success: true", async () => {
-      const caller = await getCaller();
-
-      const { idToken } = await caller.storage.upload(await makeUploadInput());
-      const result = await caller.storage.delete({ idToken });
-
-      expect(result).toEqual({ success: true });
-    });
-
-    it("makes the secret unavailable after deletion", async () => {
-      const caller = await getCaller();
-
-      const { idToken } = await caller.storage.upload(
-        await makeUploadInput("content to delete", { maxViews: "5" }),
-      );
-
-      await caller.storage.delete({ idToken });
-
-      await expect(caller.storage.download({ idToken })).rejects.toThrowError(
-        expect.objectContaining({ code: "NOT_FOUND" }) as TRPCError,
-      );
-    });
-
-    it("throws BAD_REQUEST for a malformed idToken", async () => {
-      const caller = await getCaller();
-
-      await expect(
-        caller.storage.delete({ idToken: "bad-token" }),
-      ).rejects.toThrowError(
-        expect.objectContaining({ code: "BAD_REQUEST" }) as TRPCError,
-      );
+      ).rejects.toThrowError(withCode("BAD_REQUEST"));
     });
 
     it("throws NOT_FOUND when the secret does not exist", async () => {
       const caller = await getCaller();
-      const { encodeSecretIdToken } = await import("@/server/api/utils/secret");
-      const { randomUUID } = await import("crypto");
-      const ghostToken = encodeSecretIdToken(randomUUID());
-
       await expect(
-        caller.storage.delete({ idToken: ghostToken }),
-      ).rejects.toThrowError(
-        expect.objectContaining({ code: "NOT_FOUND" }) as TRPCError,
-      );
+        caller.storage.download({
+          idToken: encodeSecretIdToken(randomUUID()),
+        }),
+      ).rejects.toThrowError(withCode("NOT_FOUND"));
+    });
+  });
+
+  describe("delete with delete token", () => {
+    it("removes the secret and its file", async () => {
+      const caller = await getCaller();
+      const { input } = await makeFileSecretInput();
+      const { idToken, deleteToken } = await caller.storage.upload(input);
+
+      await caller.secret.delete({ idToken, deleteToken });
+
+      expect(await findSecretRow(idToken)).toBeNull();
+      expect(storedFileExists(idToken)).toBe(false);
     });
   });
 });

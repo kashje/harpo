@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
-import { api, HydrateClient } from "@/trpc/server";
-import { PasswordGate } from "./_components/password-gate";
+import { api } from "@/trpc/server";
+import { SharedSecret } from "./_components/shared-secret";
 
 export default async function SharedSecretPage({
   params,
@@ -10,18 +10,16 @@ export default async function SharedSecretPage({
 }) {
   const { id } = await params;
 
-  const secret = await api.secret.get({ id });
+  const secret = await api.secret.get({ idToken: id });
   if (!secret) notFound();
 
   return (
-    <HydrateClient>
-      <section className="pt-28 pb-20 md:pt-32">
-        <div className="container mx-auto px-4">
-          <div className="mx-auto max-w-2xl">
-            <PasswordGate secret={secret} secretIdHash={id} />
-          </div>
+    <section className="pt-28 pb-20 md:pt-32">
+      <div className="container mx-auto px-4">
+        <div className="mx-auto max-w-2xl">
+          <SharedSecret secret={secret} idToken={id} />
         </div>
-      </section>
-    </HydrateClient>
+      </div>
+    </section>
   );
 }
