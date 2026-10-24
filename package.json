@@ -6,10 +6,6 @@
   "scripts": {
     "build": "next build",
     "check": "oxlint && tsc --noEmit",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio",
     "dev": "next dev --turbo",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
     "format:write": "prettier --write \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
@@ -19,9 +15,6 @@
     "start": "next start",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:db:up": "docker compose -f compose.test.yml up -d",
-    "test:db:down": "docker compose -f compose.test.yml down",
-    "test:db:push": "node --env-file=.env.test node_modules/drizzle-kit/bin.cjs push",
     "typecheck": "tsc --noEmit",
     "release": "semantic-release"
   },
@@ -34,12 +27,10 @@
     "@trpc/server": "^11.19.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "drizzle-orm": "^0.45.4",
     "ioredis": "^6.0.0",
     "lucide-react": "^1.61.0",
     "next": "^16.4.3",
     "next-themes": "^0.4.6",
-    "postgres": "^3.4.9",
     "radix-ui": "^1.8.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
@@ -58,10 +49,11 @@
     "@semantic-release/git": "^11.0.1",
     "@semantic-release/github": "^12.0.10",
     "@tailwindcss/postcss": "^4.3.3",
+    "@types/ioredis-mock": "^8.2.8",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "drizzle-kit": "^0.31.11",
+    "ioredis-mock": "^8.13.1",
     "oxlint": "^1.89.0",
     "oxlint-tsgolint": "^7.0.2005",
     "postcss": "^8.5.31",
@@ -78,8 +70,11 @@
   },
   "packageManager": "pnpm@10.31.0",
   "pnpm": {
-    "overrides": {
-      "@esbuild-kit/core-utils>esbuild": "^0.25.0"
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "ioredis-mock>ioredis": "6",
+        "@types/ioredis-mock>ioredis": "6"
+      }
     }
   }
 }

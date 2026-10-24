@@ -47,15 +47,6 @@ describe("getCreatorFingerprint", () => {
       getCreatorFingerprint({ ip: "198.51.100.5" }),
     );
   });
-
-  it("changes daily when a date is given", () => {
-    const ip = "198.51.100.4";
-    expect(
-      getCreatorFingerprint({ ip, date: new Date("2026-01-01T10:00:00Z") }),
-    ).not.toBe(
-      getCreatorFingerprint({ ip, date: new Date("2026-01-02T10:00:00Z") }),
-    );
-  });
 });
 
 describe("id tokens", () => {

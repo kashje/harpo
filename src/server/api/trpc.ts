@@ -11,7 +11,6 @@ import superjson from "superjson";
 import { ZodError, z } from "zod";
 
 import { env } from "@/env";
-import { db } from "@/server/db";
 import { checkRateLimit } from "@/server/api/utils/rateLimit";
 import { getClientIp, getCreatorFingerprint } from "@/server/api/utils/secret";
 
@@ -29,7 +28,6 @@ import { getClientIp, getCreatorFingerprint } from "@/server/api/utils/secret";
  */
 export const createTRPCContext = async (opts: { headers: Headers }) => {
   return {
-    db,
     clientIp: getClientIp(opts.headers),
     ...opts,
   };

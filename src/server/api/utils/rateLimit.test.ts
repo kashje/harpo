@@ -5,8 +5,9 @@ import { getRedis } from "@/server/redis";
 import { getCaller } from "@/test/trpc";
 import { makeTextSecretInput } from "@/test/secrets";
 import { checkRateLimit } from "./rateLimit";
+import { getCreatorFingerprint } from "./secret";
 
-const redisMock = vi.mocked(getRedis());
+const redis = getRedis();
 
 const params = {
   bucket: "test",
@@ -14,50 +15,57 @@ const params = {
   limit: 3,
   windowSeconds: 60,
 };
+const key = "ratelimit:test:client";
+
+const tooManyRequests = expect.objectContaining({
+  code: "TOO_MANY_REQUESTS",
+}) as TRPCError;
 
 describe("checkRateLimit", () => {
   afterEach(() => {
-    redisMock.eval.mockReset();
-    redisMock.eval.mockResolvedValue(1);
+    vi.restoreAllMocks();
   });
 
-  it("increments the bucket key with the window as TTL in one call", async () => {
+  it("counts per bucket and identifier, with the window as TTL", async () => {
     await checkRateLimit(params);
-    expect(redisMock.eval.mock.calls[0]).toEqual([
-      expect.any(String),
-      1,
-      "ratelimit:test:client",
-      60,
-    ]);
+    expect(await redis.get(key)).toBe("1");
+    expect(await redis.ttl(key)).toBe(60);
   });
 
   it("allows requests up to the limit and throws above it", async () => {
-    redisMock.eval.mockResolvedValueOnce(3);
-    await expect(checkRateLimit(params)).resolves.toBeUndefined();
+    for (let i = 0; i < params.limit; i++) {
+      await expect(checkRateLimit(params)).resolves.toBeUndefined();
+    }
+    await expect(checkRateLimit(params)).rejects.toThrowError(tooManyRequests);
+  });
 
-    redisMock.eval.mockResolvedValueOnce(4);
-    await expect(checkRateLimit(params)).rejects.toThrowError(
-      expect.objectContaining({ code: "TOO_MANY_REQUESTS" }) as TRPCError,
-    );
+  it("gives a counter without an expiry its TTL back", async () => {
+    await redis.set(key, 1);
+    await checkRateLimit(params);
+    expect(await redis.ttl(key)).toBe(60);
   });
 
   it("fails open when Redis is unavailable", async () => {
     vi.spyOn(console, "warn").mockImplementationOnce(() => undefined);
-    redisMock.eval.mockRejectedValueOnce(new Error("connection refused"));
+    vi.spyOn(redis, "eval").mockRejectedValueOnce(
+      new Error("connection refused"),
+    );
     await expect(checkRateLimit(params)).resolves.toBeUndefined();
   });
 
   it("throttles secret creation separately from other requests", async () => {
-    redisMock.eval.mockImplementation(async (...args: unknown[]) =>
-      String(args[2]).startsWith("ratelimit:create:") ? 1000 : 1,
+    const ip = "203.0.113.7";
+    await redis.set(
+      `ratelimit:create:${getCreatorFingerprint({ ip })}`,
+      1000,
+      "EX",
+      60,
     );
-    const caller = await getCaller({ "x-forwarded-for": "203.0.113.7" });
+    const caller = await getCaller({ "x-forwarded-for": ip });
 
     await expect(
       caller.secret.create((await makeTextSecretInput()).input),
-    ).rejects.toThrowError(
-      expect.objectContaining({ code: "TOO_MANY_REQUESTS" }) as TRPCError,
-    );
+    ).rejects.toThrowError(tooManyRequests);
     await expect(caller.secret.get({ idToken: "invalid" })).resolves.toBeNull();
   });
 });

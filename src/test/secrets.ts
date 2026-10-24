@@ -1,5 +1,3 @@
-import { eq } from "drizzle-orm";
-
 import {
   base64urlEncode,
   deriveSecretKeys,
@@ -15,8 +13,8 @@ import {
   type ExpiresIn,
   type MaxViews,
 } from "@/lib/secret-options";
-import { db } from "@/server/db";
-import { secrets } from "@/server/db/schemas/secrets";
+import { getRedis } from "@/server/redis";
+import { readSecret, secretKey } from "@/server/secretStore";
 import { decodeSecretIdToken } from "@/server/api/utils/secret";
 
 type SecretOptions = {
@@ -92,17 +90,14 @@ export async function makeFileSecretInput(
   };
 }
 
+/** Lets the secret expire now, like Redis does once `expiresAt` has passed. */
 export async function expireSecret(idToken: string) {
-  await db
-    .update(secrets)
-    .set({ expiresAt: new Date(Date.now() - 1000) })
-    .where(eq(secrets.id, decodeSecretIdToken(idToken)));
+  await getRedis().pexpireat(
+    secretKey(decodeSecretIdToken(idToken)),
+    Date.now() - 1000,
+  );
 }
 
-export async function findSecretRow(idToken: string) {
-  const rows = await db
-    .select()
-    .from(secrets)
-    .where(eq(secrets.id, decodeSecretIdToken(idToken)));
-  return rows[0] ?? null;
+export async function findStoredSecret(idToken: string) {
+  return readSecret(decodeSecretIdToken(idToken));
 }

@@ -10,7 +10,6 @@
     "jsx-a11y",
     "vitest"
   ],
-  "jsPlugins": ["./lint-plugins/drizzle.js"],
   "categories": {
     "correctness": "error"
   },
@@ -23,7 +22,7 @@
     "browser": true,
     "node": true
   },
-  "ignorePatterns": [".next/**", "next-env.d.ts", "drizzle/**"],
+  "ignorePatterns": [".next/**", "next-env.d.ts"],
   "rules": {
     "nextjs/google-font-display": "warn",
     "nextjs/google-font-preconnect": "warn",
@@ -166,16 +165,7 @@
           "warn",
           { "prefer": "type-imports", "fixStyle": "inline-type-imports" }
         ],
-        "typescript/no-import-type-side-effects": "error",
-
-        "drizzle/enforce-delete-with-where": [
-          "error",
-          { "drizzleObjectName": ["db", "ctx.db"] }
-        ],
-        "drizzle/enforce-update-with-where": [
-          "error",
-          { "drizzleObjectName": ["db", "ctx.db"] }
-        ]
+        "typescript/no-import-type-side-effects": "error"
       }
     }
   ]

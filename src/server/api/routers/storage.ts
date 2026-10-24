@@ -11,7 +11,7 @@ import {
   createTRPCRouter,
   publicProcedure,
 } from "@/server/api/trpc";
-import { secrets } from "@/server/db/schemas/secrets";
+import { createSecret } from "@/server/secretStore";
 import { createStorageAdapter } from "@/server/storage";
 import {
   deleteSecret,
@@ -56,7 +56,7 @@ export const storageRouter = createTRPCRouter({
   upload: createSecretProcedure
     .input(UploadInputSchema)
     .output(UploadOutputSchema)
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ input }) => {
       const maxSize = env.MAX_UPLOAD_SIZE_BYTES;
       // The ciphertext is the file plus the AES-GCM tag.
       const byteLength = Buffer.byteLength(input.encryptedBytes, "base64url");
@@ -68,54 +68,41 @@ export const storageRouter = createTRPCRouter({
       }
 
       const secretId = randomUUID();
-      const storagePath = secretFilePath(secretId);
+      const { deleteToken, values } = await buildNewSecretValues(input);
+
+      // The secret goes in before its file: the sweeper deletes every file without a secret, so
+      // the other way around it could remove a file that was just uploaded. Nobody has the link
+      // yet, so the secret can't be opened before the file is there.
+      try {
+        await createSecret(secretId, {
+          ...values,
+          type: "file",
+          contentCiphertext: null,
+          contentIv: input.iv,
+        });
+      } catch (err) {
+        console.error("[storage.upload] Redis error:", err);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create secret",
+        });
+      }
 
       try {
         const readable = Readable.from(
           Buffer.from(input.encryptedBytes, "base64url"),
         );
-        await createStorageAdapter().upload(storagePath, readable);
+        await createStorageAdapter().upload(secretFilePath(secretId), readable);
       } catch (err) {
         console.error("[storage.upload] Storage error:", err);
+        await deleteSecret(secretId).catch(() => undefined); // best-effort cleanup
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to store file",
         });
       }
 
-      try {
-        const { deleteToken, values } = await buildNewSecretValues({
-          ...input,
-          clientIp: ctx.clientIp,
-        });
-
-        const [inserted] = await ctx.db
-          .insert(secrets)
-          .values({
-            ...values,
-            id: secretId,
-            type: "file",
-            contentIv: input.iv,
-          })
-          .returning({ id: secrets.id });
-
-        if (!inserted) {
-          throw new Error("Insert returned no rows");
-        }
-
-        return { idToken: encodeSecretIdToken(inserted.id), deleteToken };
-      } catch (err) {
-        console.error("[storage.upload] DB error:", err);
-        try {
-          await createStorageAdapter().delete(storagePath);
-        } catch {
-          // best-effort cleanup
-        }
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to create secret",
-        });
-      }
+      return { idToken: encodeSecretIdToken(secretId), deleteToken };
     }),
 
   /** Counts a view and returns the encrypted file. The last view deletes the secret and file. */
