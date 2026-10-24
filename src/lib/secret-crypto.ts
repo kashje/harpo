@@ -6,9 +6,8 @@ export type EncryptedPayload = {
 
 const base64urlEncode = (bytes: Uint8Array): string => {
   let binary = "";
-  // eslint-disable-next-line @typescript-eslint/prefer-for-of
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]!);
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
   }
 
   return btoa(binary)
@@ -76,7 +75,7 @@ export const encryptText = async (params: {
         iv: ivBytes as unknown as BufferSource,
       },
       params.key,
-      data as unknown as BufferSource,
+      data,
     ),
   );
 
@@ -131,7 +130,7 @@ export const encryptFile = async (params: {
         iv: ivBytes as unknown as BufferSource,
       },
       params.key,
-      fileBytes as unknown as BufferSource,
+      fileBytes,
     ),
   );
 
@@ -159,9 +158,8 @@ export const decryptFile = async (params: {
 
 export const base64urlEncodeBytes = (bytes: Uint8Array): string => {
   let binary = "";
-  // eslint-disable-next-line @typescript-eslint/prefer-for-of
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]!);
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
   }
   return btoa(binary)
     .replace(/\+/g, "-")

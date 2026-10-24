@@ -21,7 +21,7 @@ const GetSecretSchema = z.object({
 
 /** Client sends the SHA-256 hash of the passphrase; server never sees plaintext. */
 const CheckPasswordSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   password: z.string().min(1), // passphrase hash (hex)
 });
 
@@ -83,7 +83,7 @@ export const secretRouter = createTRPCRouter({
   }),
 
   tagDeletion: publicProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ ctx, input }) => {
       const row = await ctx.db
         .select({
@@ -134,7 +134,7 @@ export const secretRouter = createTRPCRouter({
     }),
 
   consume: publicProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ ctx, input }) => {
       const row = await ctx.db
         .select({

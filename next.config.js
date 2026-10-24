@@ -7,6 +7,8 @@ import "./src/env.js";
 /** @type {import("next").NextConfig} */
 const config = {
   output: "standalone",
+  // Don't let `next dev` write its agent rules block into AGENTS.md.
+  agentRules: false,
 };
 
 export default config;
