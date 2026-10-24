@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 
-import { redis } from "@/server/redis";
+import { getRedis } from "@/server/redis";
 
 const RATE_LIMIT_KEY_PREFIX = "ratelimit:";
 
@@ -31,7 +31,7 @@ export async function checkRateLimit(params: {
   let count: number;
   try {
     count = Number(
-      await redis.eval(INCREMENT_SCRIPT, 1, key, params.windowSeconds),
+      await getRedis().eval(INCREMENT_SCRIPT, 1, key, params.windowSeconds),
     );
   } catch (err) {
     console.warn("[rateLimit] Redis error, failing open:", err);

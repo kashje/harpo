@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TRPCError } from "@trpc/server";
 
-import { redis } from "@/server/redis";
+import { getRedis } from "@/server/redis";
 import { getCaller } from "@/test/trpc";
 import { makeTextSecretInput } from "@/test/secrets";
 import { checkRateLimit } from "./rateLimit";
 
-const redisMock = vi.mocked(redis);
+const redisMock = vi.mocked(getRedis());
 
 const params = {
   bucket: "test",
