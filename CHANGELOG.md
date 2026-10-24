@@ -1,3 +1,10 @@
+# [1.1.0-next.3](https://github.com/kashje/harpo/compare/v1.1.0-next.2...v1.1.0-next.3) (2026-10-24)
+
+
+### Bug Fixes
+
+* **docker:** build with the pnpm version pinned in package.json ([9b80451](https://github.com/kashje/harpo/commit/9b80451308a93ddc0e2847e155483544bbb1076a))
+
 # [1.1.0-next.2](https://github.com/kashje/harpo/compare/v1.1.0-next.1...v1.1.0-next.2) (2026-10-24)
 
 
