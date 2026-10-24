@@ -24,9 +24,9 @@ const features = [
   },
   {
     icon: HardDrive,
-    title: "Choose your own storage",
+    title: "Encrypted file sharing",
     description:
-      "The application allows you to setup your own storage with different providers such as: Local, MiniO, S3, DigitalOcean Spaces.",
+      "Files are encrypted in your browser and stored as ciphertext. File names are encrypted too.",
   },
   {
     icon: Fingerprint,
@@ -38,7 +38,7 @@ const features = [
     icon: Zap,
     title: "No account required",
     description:
-      "Generate secure links instantly. No signup, no tracking, no friction.",
+      "Generate secure links instantly. No signup, no friction. Only a salted hash of your IP is kept to prevent abuse.",
   },
 ];
 

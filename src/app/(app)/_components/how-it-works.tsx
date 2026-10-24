@@ -34,7 +34,7 @@ const steps = [
     title: "Destroy",
     subtitle: "Auto-purge",
     description:
-      "Once viewed or expired, your secret is permanently deleted from our edge storage. Zero traces remain.",
+      "Once viewed or expired, your secret is permanently deleted from the server and its storage.",
     color: "from-cyan-500 to-blue-600",
   },
 ];
