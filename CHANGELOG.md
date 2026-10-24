@@ -1,3 +1,20 @@
+# [1.1.0-next.2](https://github.com/kashje/harpo/compare/v1.1.0-next.1...v1.1.0-next.2) (2026-10-24)
+
+
+### Bug Fixes
+
+* **rate-limit:** fail open instead of hanging when Redis is down ([52a8ced](https://github.com/kashje/harpo/commit/52a8cede84fb3fbe68e3f1767eaa7bf9379fc619))
+* **redis:** create the client on first use ([fc25aa6](https://github.com/kashje/harpo/commit/fc25aa6d7f6f27e788f7d0e21225c89824f35513))
+* show the invalid key error for malformed link keys ([1c70fc5](https://github.com/kashje/harpo/commit/1c70fc53f3f086dd72c3cf20bf7e36cad4fee755))
+* **ui:** align landing page claims with what Harpo does ([ecde31c](https://github.com/kashje/harpo/commit/ecde31ca7b10771733ca248076e466aeaa41059a))
+
+
+### Features
+
+* **security:** add a nonce-based content security policy and security headers ([c49b3c2](https://github.com/kashje/harpo/commit/c49b3c2fddcca243b7c60a769eaaa8cd80d9a3eb))
+* **security:** delete expired secrets in the background ([8d9dc14](https://github.com/kashje/harpo/commit/8d9dc14c6fdf87b190c0c40415040eb6d2cff622))
+* **security:** enforce view limits and passphrases on the server ([8afc477](https://github.com/kashje/harpo/commit/8afc477e54f1cb8089e0fe216c2aba8b597e795e))
+
 # [1.1.0-next.1](https://github.com/kashje/harpo/compare/v1.0.0...v1.1.0-next.1) (2026-03-30)
 
 
