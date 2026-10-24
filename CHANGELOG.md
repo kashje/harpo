@@ -1,3 +1,5 @@
+# [1.1.0-next.4](https://github.com/kashje/harpo/compare/v1.1.0-next.3...v1.1.0-next.4) (2026-10-24)
+
 # [1.1.0-next.3](https://github.com/kashje/harpo/compare/v1.1.0-next.2...v1.1.0-next.3) (2026-10-24)
 
 
