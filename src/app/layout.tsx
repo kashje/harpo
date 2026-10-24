@@ -1,6 +1,6 @@
 import "@/styles/globals.css";
 
-import { type Metadata } from "next";
+import type { Metadata } from "next";
 import { Geist, JetBrains_Mono } from "next/font/google";
 import { headers } from "next/headers";
 
@@ -45,7 +45,7 @@ const geist = Geist({
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // Set by src/middleware.ts. Reading headers also renders every page per request, which a
+  // Set by src/proxy.ts. Reading headers also renders every page per request, which a
   // nonce-based CSP requires.
   const nonce = (await headers()).get("x-nonce") ?? undefined;
 

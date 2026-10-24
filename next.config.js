@@ -4,7 +4,7 @@
  */
 import "./src/env.js";
 
-/** Headers for every response. The Content-Security-Policy is set in `src/middleware.ts`. */
+/** Headers for every response. The Content-Security-Policy is set in `src/proxy.ts`. */
 const securityHeaders = [
   // Share links contain the secret id; never leak them to other sites.
   { key: "Referrer-Policy", value: "no-referrer" },
@@ -19,6 +19,8 @@ const securityHeaders = [
 /** @type {import("next").NextConfig} */
 const config = {
   output: "standalone",
+  // Don't let `next dev` write its agent rules block into AGENTS.md.
+  agentRules: false,
   poweredByHeader: false,
   async headers() {
     return [

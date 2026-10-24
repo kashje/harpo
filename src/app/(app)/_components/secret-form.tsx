@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
@@ -58,7 +58,7 @@ const formSchema = z
   .superRefine((data, ctx) => {
     if (data.mode === "text" && !data.secret?.trim()) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "Secret is required",
         path: ["secret"],
       });
@@ -70,7 +70,7 @@ const formSchema = z
       utf8ByteLength(data.secret) > MAX_TEXT_SECRET_BYTES
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: `Secret can be at most ${MAX_TEXT_SECRET_BYTES / 1024} KB`,
         path: ["secret"],
       });
@@ -78,7 +78,7 @@ const formSchema = z
 
     if (data.mode === "file" && (!data.files || data.files.length === 0)) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "At least one file is required",
         path: ["files"],
       });
@@ -115,9 +115,10 @@ export function SecretForm({ maxUploadBytes }: { maxUploadBytes: number }) {
     },
   });
 
-  const mode = form.watch("mode");
-  const secret = form.watch("secret");
-  const files = form.watch("files");
+  const [mode, secret, files] = useWatch({
+    control: form.control,
+    name: ["mode", "secret", "files"],
+  });
 
   const isSubmitDisabled =
     form.formState.isSubmitting ||
@@ -321,7 +322,8 @@ export function SecretForm({ maxUploadBytes }: { maxUploadBytes: number }) {
                         <FieldLabel className="text-foreground font-medium">
                           Upload Files
                         </FieldLabel>
-                        <div
+                        <button
+                          type="button"
                           onClick={() => fileInputRef.current?.click()}
                           onDragOver={(e) => {
                             e.preventDefault();
@@ -338,39 +340,37 @@ export function SecretForm({ maxUploadBytes }: { maxUploadBytes: number }) {
                               field.onChange(droppedFiles);
                             }
                           }}
-                          className={`relative cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-all duration-300 ${
+                          className={`relative w-full cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-all duration-300 ${
                             isDragging
                               ? "border-primary bg-primary/5 scale-[1.02]"
                               : "border-border/50 hover:border-primary/50 hover:bg-secondary/30"
                           }`}
                         >
-                          <div className="bg-secondary/80 mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full">
+                          <span className="bg-secondary/80 mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full">
                             <Upload className="text-primary h-5 w-5" />
-                          </div>
-                          <p className="text-foreground text-sm font-medium">
+                          </span>
+                          <span className="text-foreground block text-sm font-medium">
                             Drop files here or click to browse
-                          </p>
-                          <p className="text-muted-foreground mt-1 text-xs">
+                          </span>
+                          <span className="text-muted-foreground mt-1 block text-xs">
                             Files are encrypted client-side with AES-256-GCM
-                          </p>
-                          <input
-                            ref={fileInputRef}
-                            type="file"
-                            multiple
-                            onChange={(e) => {
-                              if (e.target.files) {
-                                const selectedFiles = Array.from(
-                                  e.target.files,
-                                );
-                                field.onChange(selectedFiles);
-                                form.setValue("files", selectedFiles, {
-                                  shouldValidate: true,
-                                });
-                              }
-                            }}
-                            className="hidden"
-                          />
-                        </div>
+                          </span>
+                        </button>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          multiple
+                          onChange={(e) => {
+                            if (e.target.files) {
+                              const selectedFiles = Array.from(e.target.files);
+                              field.onChange(selectedFiles);
+                              form.setValue("files", selectedFiles, {
+                                shouldValidate: true,
+                              });
+                            }
+                          }}
+                          className="hidden"
+                        />
                         {files.length > 0 && (
                           <div className="space-y-2">
                             {files.map((file, index) => (

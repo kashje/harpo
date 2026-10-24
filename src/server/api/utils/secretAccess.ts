@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { and, eq, gt, lt, or, sql } from "drizzle-orm";
-import { type z } from "zod";
+import type { z } from "zod";
 
 import { CRYPTO_VERSION } from "@/lib/secret-crypto";
 import {
@@ -19,11 +19,7 @@ import {
   hashDeleteToken,
   verifyAuthToken,
 } from "./secret";
-import {
-  type lifetimeSchema,
-  type metaSchema,
-  type passphraseSchema,
-} from "./schemas";
+import type { lifetimeSchema, metaSchema, passphraseSchema } from "./schemas";
 
 type SecretType = (typeof secrets.$inferSelect)["type"];
 

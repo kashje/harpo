@@ -42,14 +42,20 @@ describe("secret-crypto", () => {
   });
 
   it("rejects a link key of the wrong length", async () => {
-    await expect(deriveSecretKeys({ linkKey: "short" })).rejects.toThrow();
+    for (const linkKey of ["AAAA", generateLinkKey().slice(0, 20)]) {
+      await expect(deriveSecretKeys({ linkKey })).rejects.toThrow(
+        /decryption key in the link is invalid/,
+      );
+    }
   });
 
   it("uses separate keys for metadata and content", async () => {
     const keys = await deriveSecretKeys({ linkKey: generateLinkKey() });
     const meta = await encryptMeta(keys.metaKey, { name: "n" });
 
-    await expect(decryptText(keys.contentKey, meta)).rejects.toThrow();
+    await expect(decryptText(keys.contentKey, meta)).rejects.toThrow(
+      /operation-specific reason/,
+    );
     expect(await decryptMeta(keys.metaKey, meta)).toEqual({
       name: "n",
       fileName: undefined,
@@ -84,10 +90,12 @@ describe("secret-crypto", () => {
       const linkOnly = await deriveSecretKeys({ linkKey });
 
       expect(wrong.authToken).not.toBe(keys.authToken);
-      await expect(decryptText(wrong.contentKey, encrypted)).rejects.toThrow();
-      await expect(
-        decryptText(linkOnly.contentKey, encrypted),
-      ).rejects.toThrow();
+      await expect(decryptText(wrong.contentKey, encrypted)).rejects.toThrow(
+        /operation-specific reason/,
+      );
+      await expect(decryptText(linkOnly.contentKey, encrypted)).rejects.toThrow(
+        /operation-specific reason/,
+      );
     });
 
     it("keeps the metadata readable with the link key", async () => {

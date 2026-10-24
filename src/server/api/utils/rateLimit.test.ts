@@ -6,8 +6,7 @@ import { getCaller } from "@/test/trpc";
 import { makeTextSecretInput } from "@/test/secrets";
 import { checkRateLimit } from "./rateLimit";
 
-// eslint-disable-next-line @typescript-eslint/unbound-method -- mocked function, `this` is unused
-const evalMock = vi.mocked(redis.eval);
+const redisMock = vi.mocked(redis);
 
 const params = {
   bucket: "test",
@@ -18,25 +17,25 @@ const params = {
 
 describe("checkRateLimit", () => {
   afterEach(() => {
-    evalMock.mockReset();
-    evalMock.mockResolvedValue(1);
+    redisMock.eval.mockReset();
+    redisMock.eval.mockResolvedValue(1);
   });
 
   it("increments the bucket key with the window as TTL in one call", async () => {
     await checkRateLimit(params);
-    expect(evalMock).toHaveBeenCalledWith(
+    expect(redisMock.eval.mock.calls[0]).toEqual([
       expect.any(String),
       1,
       "ratelimit:test:client",
       60,
-    );
+    ]);
   });
 
   it("allows requests up to the limit and throws above it", async () => {
-    evalMock.mockResolvedValueOnce(3);
+    redisMock.eval.mockResolvedValueOnce(3);
     await expect(checkRateLimit(params)).resolves.toBeUndefined();
 
-    evalMock.mockResolvedValueOnce(4);
+    redisMock.eval.mockResolvedValueOnce(4);
     await expect(checkRateLimit(params)).rejects.toThrowError(
       expect.objectContaining({ code: "TOO_MANY_REQUESTS" }) as TRPCError,
     );
@@ -44,12 +43,12 @@ describe("checkRateLimit", () => {
 
   it("fails open when Redis is unavailable", async () => {
     vi.spyOn(console, "warn").mockImplementationOnce(() => undefined);
-    evalMock.mockRejectedValueOnce(new Error("connection refused"));
+    redisMock.eval.mockRejectedValueOnce(new Error("connection refused"));
     await expect(checkRateLimit(params)).resolves.toBeUndefined();
   });
 
   it("throttles secret creation separately from other requests", async () => {
-    evalMock.mockImplementation(async (...args: unknown[]) =>
+    redisMock.eval.mockImplementation(async (...args: unknown[]) =>
       String(args[2]).startsWith("ratelimit:create:") ? 1000 : 1,
     );
     const caller = await getCaller({ "x-forwarded-for": "203.0.113.7" });

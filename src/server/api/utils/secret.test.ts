@@ -65,7 +65,9 @@ describe("id tokens", () => {
     expect(decodeSecretIdToken(token)).toBe(id);
 
     const tampered = token.slice(0, -2) + (token.endsWith("A") ? "BB" : "AA");
-    expect(() => decodeSecretIdToken(tampered)).toThrow();
+    expect(() => decodeSecretIdToken(tampered)).toThrow(
+      /unable to authenticate data/,
+    );
   });
 });
 

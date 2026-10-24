@@ -1,6 +1,8 @@
 import { Github, Logo } from "@/components/icons";
 import Link from "next/link";
 
+const currentYear = new Date().getFullYear();
+
 export function Footer() {
   return (
     <footer className="border-border/50 relative mt-12 border-t py-12">
@@ -34,7 +36,7 @@ export function Footer() {
               <Github className="h-4 w-4" />
             </Link>
             <span className="text-muted-foreground text-xs">
-              &copy; {new Date().getFullYear()} Harpo
+              &copy; {currentYear} Harpo
             </span>
           </div>
         </div>

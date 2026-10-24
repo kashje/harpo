@@ -283,7 +283,7 @@ describe("secret router", () => {
       const linkOnly = await deriveSecretKeys({ linkKey });
       await expect(
         decryptText(linkOnly.contentKey, result.content),
-      ).rejects.toThrow();
+      ).rejects.toThrow(/operation-specific reason/);
     });
 
     it("destroys the secret after too many wrong attempts", async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   Download,
   Eye,
@@ -37,6 +37,33 @@ import {
   type SecretMeta,
 } from "@/lib/secret-crypto";
 
+// The decryption key lives in the URL fragment, which is never sent to the
+// server, so it can only be read on the client.
+function subscribeToHash(onChange: () => void) {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
+}
+
+function getKeyFromHash() {
+  return window.location.hash.slice(1) || null;
+}
+
+/** `undefined` while rendering on the server, where the fragment is unknown. */
+function getServerKeyFromHash() {
+  return undefined;
+}
+
+function formatExpiresAt(expiresAt: Date) {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(expiresAt);
+  } catch {
+    return expiresAt.toISOString();
+  }
+}
+
 const getErrorMessage = (err: unknown, fallback: string) =>
   err instanceof Error && err.message ? err.message : fallback;
 
@@ -68,10 +95,15 @@ export function SharedSecret({
   const reveal = api.secret.reveal.useMutation();
   const download = api.storage.download.useMutation();
 
-  /** `undefined` until the URL fragment has been read on the client. */
-  const [linkKey, setLinkKey] = useState<string | null | undefined>(undefined);
-  const [meta, setMeta] = useState<SecretMeta | null>(null);
-  const [keyError, setKeyError] = useState<string | null>(null);
+  const linkKey = useSyncExternalStore(
+    subscribeToHash,
+    getKeyFromHash,
+    getServerKeyFromHash,
+  );
+  const [metaResult, setMetaResult] = useState<{
+    linkKey: string;
+    meta: SecretMeta | null;
+  } | null>(null);
   const [passphrase, setPassphrase] = useState("");
   const [revealedText, setRevealedText] = useState<string | null>(null);
   const [views, setViews] = useState({
@@ -88,44 +120,31 @@ export function SharedSecret({
     views.maxViews > 0 && views.viewCount + 1 >= views.maxViews;
 
   useEffect(() => {
-    const value = window.location.hash.slice(1);
-    setLinkKey(value || null);
-  }, []);
-
-  useEffect(() => {
-    if (linkKey === undefined) return;
-    if (linkKey === null) {
-      setKeyError(
-        "The decryption key is missing from the link. Make sure you used the full link.",
-      );
-      return;
-    }
+    if (!linkKey) return;
+    let cancelled = false;
 
     deriveSecretKeys({ linkKey })
       .then(({ metaKey }) => decryptMeta(metaKey, secret.meta))
-      .then((decrypted) => {
-        setMeta(decrypted);
-        setKeyError(null);
-      })
-      .catch(() =>
-        setKeyError(
-          "The decryption key in the link is invalid. Make sure you used the full link.",
-        ),
-      );
+      .then((meta) => !cancelled && setMetaResult({ linkKey, meta }))
+      .catch(() => !cancelled && setMetaResult({ linkKey, meta: null }));
+
+    return () => {
+      cancelled = true;
+    };
   }, [linkKey, secret.meta]);
 
-  const expiresLabel = useMemo(() => {
-    try {
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(secret.expiresAt);
-    } catch {
-      return secret.expiresAt.toISOString();
-    }
-  }, [secret.expiresAt]);
+  // Only trust a result that belongs to the key currently in the URL.
+  const metaForKey = metaResult?.linkKey === linkKey ? metaResult : null;
+  const meta = metaForKey?.meta ?? null;
+  const keyError =
+    linkKey === null
+      ? "The decryption key is missing from the link. Make sure you used the full link."
+      : metaForKey && !metaForKey.meta
+        ? "The decryption key in the link is invalid. Make sure you used the full link."
+        : null;
+  const expiresLabel = formatExpiresAt(secret.expiresAt);
 
-  const getKeys = useCallback(async () => {
+  const getKeys = async () => {
     if (!linkKey || keyError) {
       throw new Error(keyError ?? "The decryption key is missing.");
     }
@@ -139,10 +158,10 @@ export function SharedSecret({
         ? { ...secret.passphrase, value: passphrase }
         : null,
     });
-  }, [keyError, linkKey, passphrase, secret.passphrase]);
+  };
 
   /** Reveals the text once; after that the decrypted text is reused without using a view. */
-  const revealText = useCallback(async (): Promise<string> => {
+  const revealText = async (): Promise<string> => {
     if (revealedText !== null) return revealedText;
 
     const keys = await getKeys();
@@ -156,9 +175,9 @@ export function SharedSecret({
     setViews({ viewCount: result.viewCount, maxViews: result.maxViews });
     setDestroyed(result.destroyed);
     return text;
-  }, [getKeys, idToken, reveal, revealedText]);
+  };
 
-  const handleReveal = useCallback(async () => {
+  const handleReveal = async () => {
     try {
       await revealText();
     } catch (err) {
@@ -168,9 +187,9 @@ export function SharedSecret({
         closeButton: true,
       });
     }
-  }, [revealText]);
+  };
 
-  const handleCopy = useCallback(async () => {
+  const handleCopy = async () => {
     try {
       const text = await revealText();
       await navigator.clipboard.writeText(text);
@@ -183,9 +202,9 @@ export function SharedSecret({
         closeButton: true,
       });
     }
-  }, [revealText]);
+  };
 
-  const handleDownload = useCallback(async () => {
+  const handleDownload = async () => {
     try {
       const keys = await getKeys();
       const result = await download.mutateAsync({
@@ -208,11 +227,11 @@ export function SharedSecret({
         closeButton: true,
       });
     }
-  }, [download, getKeys, idToken, meta]);
+  };
 
   const title =
     meta?.name ?? meta?.fileName ?? (isFile ? "Shared file" : "Shared secret");
-  const canAct = !keyError && linkKey && !destroyed;
+  const canAct = !keyError && !!linkKey && !!metaForKey && !destroyed;
   const revealed = revealedText !== null;
 
   return (

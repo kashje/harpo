@@ -1,4 +1,4 @@
-FROM node:lts-alpine AS node_upstream
+FROM node:24-alpine AS node_upstream
 
 # Base
 FROM node_upstream AS base

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { CheckCircle, Trash2 } from "lucide-react";
 
 import { api } from "@/trpc/react";
@@ -14,17 +14,28 @@ import {
 } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
+// The delete token lives in the URL fragment, which is never sent to the server.
+function subscribeToHash(onChange: () => void) {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
+}
+
+function getTokenFromHash() {
+  return window.location.hash.slice(1) || null;
+}
+
+/** `undefined` while rendering on the server, where the fragment is unknown. */
+function getServerTokenFromHash() {
+  return undefined;
+}
+
 export function DeleteSecret({ idToken }: { idToken: string }) {
   const deleteSecret = api.secret.delete.useMutation();
-  /** `undefined` until the URL fragment has been read on the client. */
-  const [deleteToken, setDeleteToken] = useState<string | null | undefined>(
-    undefined,
+  const deleteToken = useSyncExternalStore(
+    subscribeToHash,
+    getTokenFromHash,
+    getServerTokenFromHash,
   );
-
-  useEffect(() => {
-    const value = window.location.hash.slice(1);
-    setDeleteToken(value || null);
-  }, []);
 
   return (
     <Card className="bg-card/60 border-border/50 backdrop-blur-xl">

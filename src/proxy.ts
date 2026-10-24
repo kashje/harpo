@@ -7,7 +7,7 @@ import { NextResponse, type NextRequest } from "next/server";
  *
  * @see https://nextjs.org/docs/app/guides/content-security-policy
  */
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const nonce = btoa(crypto.randomUUID());
   const isDev = process.env.NODE_ENV === "development";
 
