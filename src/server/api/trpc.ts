@@ -10,9 +10,11 @@ import { initTRPC } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError, z } from "zod";
 
-import { env } from "@/env";
-import { checkRateLimit } from "@/server/api/utils/rateLimit";
-import { getClientIp, getCreatorFingerprint } from "@/server/api/utils/secret";
+import {
+  checkCreateRateLimit,
+  checkGlobalRateLimit,
+} from "@/server/api/utils/rateLimit";
+import { getClientIp } from "@/server/api/utils/secret";
 
 /**
  * 1. CONTEXT
@@ -80,26 +82,13 @@ export const createTRPCRouter = t.router;
  * client exceeds RATE_LIMIT_AMOUNT requests per RATE_LIMIT_TIME seconds.
  */
 const rateLimitMiddleware = t.middleware(async ({ next, ctx }) => {
-  await checkRateLimit({
-    bucket: "global",
-    identifier: getCreatorFingerprint({ ip: ctx.clientIp }),
-    limit: env.RATE_LIMIT_AMOUNT,
-    windowSeconds: env.RATE_LIMIT_TIME,
-  });
+  await checkGlobalRateLimit(ctx.clientIp);
   return next({ ctx });
 });
 
-/**
- * Throttles people spamming new secrets: at most CREATE_RATE_LIMIT_AMOUNT secrets per
- * CREATE_RATE_LIMIT_TIME seconds per client IP, on top of the global limit.
- */
+/** Throttles people spamming new secrets, on top of the global limit. */
 const createRateLimitMiddleware = t.middleware(async ({ next, ctx }) => {
-  await checkRateLimit({
-    bucket: "create",
-    identifier: getCreatorFingerprint({ ip: ctx.clientIp }),
-    limit: env.CREATE_RATE_LIMIT_AMOUNT,
-    windowSeconds: env.CREATE_RATE_LIMIT_TIME,
-  });
+  await checkCreateRateLimit(ctx.clientIp);
   return next({ ctx });
 });
 

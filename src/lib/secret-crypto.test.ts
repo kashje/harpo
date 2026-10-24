@@ -3,15 +3,32 @@ import { describe, expect, it } from "vitest";
 import {
   base64urlDecode,
   base64urlEncode,
+  decryptFile,
   decryptMeta,
   decryptText,
   deriveSecretKeys,
+  encryptFile,
   encryptMeta,
   encryptText,
   generateLinkKey,
   generatePassphraseSalt,
 } from "./secret-crypto";
-import { PBKDF2_MIN_ITERATIONS } from "./secret-options";
+import {
+  AES_GCM_TAG_BYTES,
+  FILE_CHUNK_BYTES,
+  PBKDF2_MIN_ITERATIONS,
+  encryptedFileSize,
+} from "./secret-options";
+
+/** The bytes in pieces of `size`, like a network stream delivers them. */
+async function* piecesOf(bytes: Uint8Array, size = 64 * 1024) {
+  for (let i = 0; i < bytes.length; i += size)
+    yield bytes.subarray(i, i + size);
+}
+
+const bytesOf = async (blob: Blob) => new Uint8Array(await blob.arrayBuffer());
+
+const CHUNK = FILE_CHUNK_BYTES + AES_GCM_TAG_BYTES;
 
 const passphrase = (value: string, salt = generatePassphraseSalt()) => ({
   value,
@@ -108,6 +125,92 @@ describe("secret-crypto", () => {
 
       const linkOnly = await deriveSecretKeys({ linkKey });
       expect((await decryptMeta(linkOnly.metaKey, meta)).name).toBe("label");
+    });
+  });
+
+  describe("files", () => {
+    const contentKey = async () =>
+      (await deriveSecretKeys({ linkKey: generateLinkKey() })).contentKey;
+    const fileOf = (size: number) =>
+      Uint8Array.from({ length: size }, (_, i) => (i * 31) % 251);
+
+    it.each([
+      0,
+      1,
+      FILE_CHUNK_BYTES - 1,
+      FILE_CHUNK_BYTES,
+      FILE_CHUNK_BYTES + 1,
+      2 * FILE_CHUNK_BYTES + 5,
+    ])("round-trips a file of %i bytes, chunk by chunk", async (size) => {
+      const key = await contentKey();
+      const file = fileOf(size);
+
+      const { ciphertext, iv } = await encryptFile(key, new Blob([file]));
+      expect(ciphertext.size).toBe(encryptedFileSize(size));
+
+      // Pieces that don't line up with the chunks, as they arrive from the network.
+      const decrypted = await decryptFile(
+        key,
+        piecesOf(await bytesOf(ciphertext), 100_003),
+        iv,
+        "text/plain",
+      );
+      expect(decrypted.type).toBe("text/plain");
+      expect(await bytesOf(decrypted)).toEqual(file);
+    });
+
+    describe("rejects a file that was tampered with", () => {
+      const encrypted = async () => {
+        const key = await contentKey();
+        const { ciphertext, iv } = await encryptFile(
+          key,
+          new Blob([fileOf(2 * FILE_CHUNK_BYTES + 5)]),
+        );
+        return { key, iv, bytes: await bytesOf(ciphertext) };
+      };
+      const decrypt = (
+        { key, iv }: { key: CryptoKey; iv: Uint8Array<ArrayBuffer> },
+        bytes: Uint8Array,
+      ) => decryptFile(key, piecesOf(bytes), iv);
+      const rejected = /could not be decrypted/;
+
+      it("a changed byte", async () => {
+        const file = await encrypted();
+        const changed = file.bytes.slice();
+        changed[CHUNK + 10]! ^= 1;
+        await expect(decrypt(file, changed)).rejects.toThrow(rejected);
+      });
+
+      it("cut off after a whole chunk", async () => {
+        const file = await encrypted();
+        await expect(
+          decrypt(file, file.bytes.subarray(0, 2 * CHUNK)),
+        ).rejects.toThrow(rejected);
+      });
+
+      it("chunks in a different order", async () => {
+        const file = await encrypted();
+        const swapped = new Uint8Array(file.bytes.length);
+        swapped.set(file.bytes.subarray(CHUNK, 2 * CHUNK));
+        swapped.set(file.bytes.subarray(0, CHUNK), CHUNK);
+        swapped.set(file.bytes.subarray(2 * CHUNK), 2 * CHUNK);
+        await expect(decrypt(file, swapped)).rejects.toThrow(rejected);
+      });
+
+      it("an extra chunk at the end", async () => {
+        const file = await encrypted();
+        const longer = new Uint8Array(file.bytes.length + CHUNK);
+        longer.set(file.bytes);
+        longer.set(file.bytes.subarray(0, CHUNK), file.bytes.length);
+        await expect(decrypt(file, longer)).rejects.toThrow(rejected);
+      });
+
+      it("nothing at all", async () => {
+        const file = await encrypted();
+        await expect(decrypt(file, new Uint8Array(0))).rejects.toThrow(
+          rejected,
+        );
+      });
     });
   });
 });

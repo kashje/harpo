@@ -1,7 +1,7 @@
 import type { StorageAdapter } from "@/types";
-import { Readable } from "stream";
+import type { Readable } from "stream";
 import { dirname, join, relative, sep } from "path";
-import { createReadStream, createWriteStream, promises as fs } from "fs";
+import { createWriteStream, promises as fs } from "fs";
 import { pipeline } from "stream/promises";
 
 export class LocalStorageAdapter implements StorageAdapter {
@@ -20,12 +20,11 @@ export class LocalStorageAdapter implements StorageAdapter {
   }
 
   async download(path: string): Promise<Readable> {
-    const fullPath = join(this.basePath, path);
-
-    const readStream = createReadStream(fullPath);
-
-    return Readable.from(readStream);
+    // Opening first makes a missing file reject here instead of failing the stream later.
+    const handle = await fs.open(join(this.basePath, path));
+    return handle.createReadStream();
   }
+
   async delete(path: string): Promise<void> {
     const fullPath = join(this.basePath, path);
     try {

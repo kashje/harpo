@@ -1,3 +1,5 @@
+import { randomUUID } from "crypto";
+
 import { getRedis } from "@/server/redis";
 
 export type SecretType = "text" | "file";
@@ -38,18 +40,26 @@ export type NewSecret = Omit<StoredSecret, "failedAttempts" | "viewCount">;
 export const secretKey = (id: string) => `secret:${id}`;
 
 /**
- * How long a file secret lingers after its last view. The download deletes it as soon as it has
- * read the file; this only bounds how long it stays when that delete never happens.
+ * Every running download of a file holds a *lease*: a member of this sorted set, scored with the
+ * time it runs out. A file is only deleted once its secret is gone and no lease is active, so a
+ * download is never cut off, even when the secret expires or has its last view meanwhile.
  */
-const LAST_FILE_VIEW_TTL_MS = 5 * 60 * 1000;
+export const downloadsKey = (id: string) => `downloads:${id}`;
+
+/**
+ * How long a lease lasts without being renewed. Downloads renew theirs while they run; this only
+ * matters when a download ends without releasing it, e.g. when the server crashes.
+ */
+export const DOWNLOAD_LEASE_MS = 2 * 60 * 1000;
 
 // The scripts only return numbers, strings and arrays of those: Redis turns a Lua `false` into
 // `null`, but ioredis-mock (used in the tests) doesn't.
 
 /**
  * Counts one view unless the secret is gone or out of views, and returns
- * `{viewCount, maxViews, contentIv, contentCiphertext}`, or `0` when there is nothing to view.
- * The last view of a text secret deletes it right away.
+ * `{viewCount, maxViews, contentIv, contentCiphertext, leased}`, or `0` when there is nothing to
+ * view. A view of a file takes download lease `ARGV[1]` (`leased` is `1`). The last view deletes
+ * the secret right away; a file's lease keeps the file until its download is done.
  */
 const CLAIM_VIEW_SCRIPT = `
 if redis.call("EXISTS", KEYS[1]) == 0 then return 0 end
@@ -60,18 +70,30 @@ if maxViews > 0 and viewCount >= maxViews then return 0 end
 viewCount = redis.call("HINCRBY", KEYS[1], "viewCount", 1)
 local contentIv = redis.call("HGET", KEYS[1], "contentIv")
 local content = redis.call("HGET", KEYS[1], "contentCiphertext") or ""
+local leased = 0
 
+if redis.call("HGET", KEYS[1], "type") == "file" then
+  redis.call("ZADD", KEYS[2], ARGV[2], ARGV[1])
+  redis.call("PEXPIRE", KEYS[2], ARGV[3])
+  leased = 1
+end
 if maxViews > 0 and viewCount >= maxViews then
-  if redis.call("HGET", KEYS[1], "type") == "file" then
-    if redis.call("PTTL", KEYS[1]) > tonumber(ARGV[1]) then
-      redis.call("PEXPIRE", KEYS[1], ARGV[1])
-    end
-  else
-    redis.call("DEL", KEYS[1])
-  end
+  redis.call("DEL", KEYS[1])
 end
 
-return {viewCount, maxViews, contentIv, content}
+return {viewCount, maxViews, contentIv, content, leased}
+`;
+
+/**
+ * Releases lease `ARGV[1]` and returns `1` when the file is no longer needed: its secret is gone
+ * and no other lease is active (`ARGV[2]` is the current time).
+ */
+const RELEASE_DOWNLOAD_SCRIPT = `
+redis.call("ZREM", KEYS[2], ARGV[1])
+if redis.call("EXISTS", KEYS[1]) == 1 then return 0 end
+if redis.call("ZCOUNT", KEYS[2], ARGV[2], "+inf") > 0 then return 0 end
+redis.call("DEL", KEYS[2])
+return 1
 `;
 
 /** Returns the new number of failed attempts, or `0` when the secret is gone. */
@@ -144,29 +166,64 @@ export async function readSecret(id: string): Promise<StoredSecret | null> {
 
 /**
  * Counts one view, atomically: concurrent requests can never get more views than `maxViews`.
- * Returns `null` when the secret is gone, expired or out of views.
+ * Returns `null` when the secret is gone, expired or out of views. For a file, `downloadLease` is
+ * the lease the download must renew while it runs and release when it ends.
  */
 export async function claimSecretView(id: string) {
+  const lease = randomUUID();
   const result = await getRedis().eval(
     CLAIM_VIEW_SCRIPT,
-    1,
+    2,
     secretKey(id),
-    LAST_FILE_VIEW_TTL_MS,
+    downloadsKey(id),
+    lease,
+    Date.now() + DOWNLOAD_LEASE_MS,
+    DOWNLOAD_LEASE_MS,
   );
   if (!Array.isArray(result)) return null;
 
-  const [viewCount, maxViews, contentIv, contentCiphertext] = result as [
-    number,
-    number,
-    string,
-    string,
-  ];
+  const [viewCount, maxViews, contentIv, contentCiphertext, leased] =
+    result as [number, number, string, string, number];
   return {
     viewCount,
     maxViews,
     contentIv,
     contentCiphertext: contentCiphertext || null,
+    downloadLease: leased ? lease : null,
   };
+}
+
+/**
+ * Extends a download lease by another `DOWNLOAD_LEASE_MS`. `XX` only updates it: a renewal that
+ * arrives after the lease was released must not bring it back.
+ */
+export async function renewDownloadLease(id: string, lease: string) {
+  await getRedis()
+    .multi()
+    .zadd(downloadsKey(id), "XX", Date.now() + DOWNLOAD_LEASE_MS, lease)
+    .pexpire(downloadsKey(id), DOWNLOAD_LEASE_MS)
+    .exec();
+}
+
+/** Releases a download lease. Returns `true` when the file can be deleted now. */
+export async function releaseDownloadLease(
+  id: string,
+  lease: string,
+): Promise<boolean> {
+  const result = await getRedis().eval(
+    RELEASE_DOWNLOAD_SCRIPT,
+    2,
+    secretKey(id),
+    downloadsKey(id),
+    lease,
+    Date.now(),
+  );
+  return Number(result) === 1;
+}
+
+/** Whether a download of the secret's file is running. */
+export async function isFileDownloading(id: string): Promise<boolean> {
+  return (await getRedis().zcount(downloadsKey(id), Date.now(), "+inf")) > 0;
 }
 
 /** Returns the new number of failed passphrase attempts, or `null` when the secret is gone. */
@@ -196,26 +253,35 @@ export async function deleteSecretRecord(
   return type === "text" || type === "file" ? type : null;
 }
 
-const EXISTS_BATCH_SIZE = 500;
+const IN_USE_BATCH_SIZE = 500;
 
-/** The subset of `ids` that still have a secret. Throws when Redis can't answer for all of them. */
-export async function existingSecretIds(ids: string[]): Promise<Set<string>> {
-  const existing = new Set<string>();
+/**
+ * The subset of `ids` whose file is still needed: the secret exists or a download is running.
+ * Throws when Redis can't answer for all of them.
+ *
+ * Per id, the secret is checked before the leases. Once a secret is gone no lease can be added, and
+ * its last view deletes it in the same step that adds the lease, so a file in use is never missed.
+ */
+export async function fileIdsInUse(ids: string[]): Promise<Set<string>> {
+  const inUse = new Set<string>();
 
-  for (let i = 0; i < ids.length; i += EXISTS_BATCH_SIZE) {
-    const batch = ids.slice(i, i + EXISTS_BATCH_SIZE);
+  for (let i = 0; i < ids.length; i += IN_USE_BATCH_SIZE) {
+    const batch = ids.slice(i, i + IN_USE_BATCH_SIZE);
+    const now = Date.now();
     const pipeline = getRedis().pipeline();
-    for (const id of batch) pipeline.exists(secretKey(id));
+    for (const id of batch) {
+      pipeline.exists(secretKey(id)).zcount(downloadsKey(id), now, "+inf");
+    }
 
     const results = await pipeline.exec();
-    if (results?.length !== batch.length) {
-      throw new Error("Incomplete EXISTS pipeline result");
+    if (results?.length !== batch.length * 2) {
+      throw new Error("Incomplete pipeline result");
     }
     results.forEach(([err, count], index) => {
       if (err) throw err;
-      if (Number(count) > 0) existing.add(batch[index]!);
+      if (Number(count) > 0) inUse.add(batch[Math.floor(index / 2)]!);
     });
   }
 
-  return existing;
+  return inUse;
 }

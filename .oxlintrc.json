@@ -78,6 +78,11 @@
 
     "import/no-anonymous-default-export": "warn",
 
+    "vitest/expect-expect": [
+      "error",
+      { "assertFunctionNames": ["expect", "expectError"] }
+    ],
+
     "jsx-a11y/alt-text": [
       "warn",
       { "elements": ["img"], "img": ["Image"] }

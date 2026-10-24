@@ -1,5 +1,5 @@
-import { existingSecretIds } from "@/server/secretStore";
-import { createStorageAdapter } from "@/server/storage";
+import { fileIdsInUse } from "@/server/secretStore";
+import { getStorageAdapter } from "@/server/storage";
 import {
   SECRET_FILES_PREFIX,
   deleteSecretFile,
@@ -9,20 +9,20 @@ import {
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
- * Deletes every stored file whose secret is gone. Redis drops expired secrets by itself, and all
- * of them when it restarts, but it can't remove their files. A file secret is created before its
- * file is uploaded, so an upload in progress is never swept. Safe to run from several app
- * instances at once.
+ * Deletes every stored file whose secret is gone and that nobody is downloading. Redis drops
+ * expired secrets by itself, and all of them when it restarts, but it can't remove their files. A
+ * file secret is created before its file is uploaded, so an upload in progress is never swept.
+ * Safe to run from several app instances at once.
  */
 export async function sweepOrphanedFiles(): Promise<number> {
   const ids: string[] = [];
-  for await (const path of createStorageAdapter().list(SECRET_FILES_PREFIX)) {
+  for await (const path of getStorageAdapter().list(SECRET_FILES_PREFIX)) {
     const id = secretIdFromFilePath(path);
     if (id) ids.push(id);
   }
 
-  const existing = await existingSecretIds(ids);
-  const orphaned = ids.filter((id) => !existing.has(id));
+  const inUse = await fileIdsInUse(ids);
+  const orphaned = ids.filter((id) => !inUse.has(id));
   await Promise.all(orphaned.map((id) => deleteSecretFile(id)));
 
   return orphaned.length;

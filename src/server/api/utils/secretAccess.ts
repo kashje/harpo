@@ -92,8 +92,9 @@ async function registerFailedAttempt(id: string): Promise<never> {
 
 /**
  * Checks the passphrase and counts one view, atomically: concurrent requests can never get more
- * views than `maxViews`. The last view of a text secret deletes it right away; for a file secret
- * `isLastView` is true and the caller must delete it once it has read the stored file.
+ * views than `maxViews`. The last view deletes the secret right away. A view of a file comes with a
+ * `downloadLease` that keeps the file; the caller must renew it while sending the file and end it
+ * with `finishDownload`, which deletes the file after the last view.
  */
 export async function claimView(params: {
   id: string;
@@ -122,8 +123,8 @@ export async function claimView(params: {
     }
   }
 
-  // Gone, expired or out of views (possibly by a concurrent request). Whoever claimed the last
-  // view deletes the secret, and Redis drops expired ones, so there is nothing to clean up here.
+  // Gone, expired or out of views (possibly by a concurrent request). The last view deletes the
+  // secret, and Redis drops expired ones, so there is nothing to clean up here.
   const row = await claimSecretView(params.id);
   if (!row) throw unavailable();
 

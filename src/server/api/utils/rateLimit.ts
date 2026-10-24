@@ -1,6 +1,8 @@
 import { TRPCError } from "@trpc/server";
 
+import { env } from "@/env";
 import { getRedis } from "@/server/redis";
+import { getCreatorFingerprint } from "./secret";
 
 const RATE_LIMIT_KEY_PREFIX = "ratelimit:";
 
@@ -45,3 +47,24 @@ export async function checkRateLimit(params: {
     });
   }
 }
+
+/** The limit on every request: RATE_LIMIT_AMOUNT per RATE_LIMIT_TIME seconds per client IP. */
+export const checkGlobalRateLimit = (clientIp: string) =>
+  checkRateLimit({
+    bucket: "global",
+    identifier: getCreatorFingerprint({ ip: clientIp }),
+    limit: env.RATE_LIMIT_AMOUNT,
+    windowSeconds: env.RATE_LIMIT_TIME,
+  });
+
+/**
+ * Throttles people spamming new secrets: at most CREATE_RATE_LIMIT_AMOUNT secrets per
+ * CREATE_RATE_LIMIT_TIME seconds per client IP, on top of the global limit.
+ */
+export const checkCreateRateLimit = (clientIp: string) =>
+  checkRateLimit({
+    bucket: "create",
+    identifier: getCreatorFingerprint({ ip: clientIp }),
+    limit: env.CREATE_RATE_LIMIT_AMOUNT,
+    windowSeconds: env.CREATE_RATE_LIMIT_TIME,
+  });

@@ -1,5 +1,5 @@
 /**
- * Client-side encryption for Harpo secrets (payload format "v2").
+ * Client-side encryption for Harpo secrets (payload format "v3").
  *
  * - A random 32-byte *link key* lives only in the URL fragment and never reaches the server.
  * - The metadata (name, file name, MIME type) is encrypted with a key derived from the link key.
@@ -8,19 +8,24 @@
  *   half is an *auth token* the server stores a slow hash of. The server checks the auth token
  *   before handing out the ciphertext, so a wrong passphrase never costs a view, and the content
  *   can't be decrypted from the link alone.
+ * - Files are encrypted in chunks (see `encryptFile`); "v3" introduced that, keys are derived as in
+ *   "v2".
  */
+import { splitChunks, type Bytes } from "./byte-stream";
 import {
   AES_GCM_IV_BYTES,
+  AES_GCM_TAG_BYTES,
+  FILE_CHUNK_BYTES,
   LINK_KEY_BYTES,
   PASSPHRASE_SALT_BYTES,
 } from "./secret-options";
 
-export const CRYPTO_VERSION = "v2" as const;
+export type { Bytes };
+
+export const CRYPTO_VERSION = "v3" as const;
 
 const META_KEY_INFO = "harpo/v2/meta";
 const CONTENT_KEY_INFO = "harpo/v2/content";
-
-export type Bytes = Uint8Array<ArrayBuffer>;
 
 export type EncryptedBlob = {
   ciphertext: string;
@@ -174,6 +179,90 @@ export const decryptBytes = async (
   new Uint8Array(
     await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext),
   );
+
+/**
+ * Nonce of a file chunk: the file's random IV XOR the chunk index and a last-chunk flag, as in the
+ * STREAM construction (and TLS 1.3's per-record nonces). Each chunk gets its own nonce, so chunks
+ * that are reordered, dropped or added, or a file that is cut short, fail to decrypt.
+ */
+const chunkNonce = (iv: Bytes, index: number, last: boolean): Bytes => {
+  const nonce = iv.slice();
+  const view = new DataView(nonce.buffer);
+  view.setUint32(7, view.getUint32(7) ^ index);
+  nonce[11] = nonce[11]! ^ (last ? 1 : 0);
+  return nonce;
+};
+
+/**
+ * Encrypts a file chunk by chunk. Only one chunk is in JavaScript memory at a time: each encrypted
+ * chunk goes into its own Blob, which the browser may keep outside the JS heap (or on disk).
+ */
+export const encryptFile = async (
+  key: CryptoKey,
+  file: Blob,
+): Promise<{ ciphertext: Blob; iv: Bytes }> => {
+  const iv = randomBytes(AES_GCM_IV_BYTES);
+  const chunks = Math.max(1, Math.ceil(file.size / FILE_CHUNK_BYTES));
+  const parts: Blob[] = [];
+
+  for (let index = 0; index < chunks; index += 1) {
+    const start = index * FILE_CHUNK_BYTES;
+    const plaintext = await file
+      .slice(start, start + FILE_CHUNK_BYTES)
+      .arrayBuffer();
+    const nonce = chunkNonce(iv, index, index === chunks - 1);
+    parts.push(
+      new Blob([
+        await crypto.subtle.encrypt(
+          { name: "AES-GCM", iv: nonce },
+          key,
+          plaintext,
+        ),
+      ]),
+    );
+  }
+
+  return { ciphertext: new Blob(parts), iv };
+};
+
+/**
+ * Decrypts a file from `encryptFile` while it streams in, chunk by chunk. Rejects when any chunk
+ * was changed, or the file is incomplete; nothing is returned unless the whole file checks out.
+ */
+export const decryptFile = async (
+  key: CryptoKey,
+  ciphertext: AsyncIterable<Uint8Array>,
+  iv: Bytes,
+  type?: string,
+): Promise<Blob> => {
+  const parts: Blob[] = [];
+  let index = 0;
+
+  for await (const { bytes, last } of splitChunks(
+    ciphertext,
+    FILE_CHUNK_BYTES + AES_GCM_TAG_BYTES,
+  )) {
+    const nonce = chunkNonce(iv, index, last);
+    index += 1;
+    try {
+      parts.push(
+        new Blob([
+          await crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: nonce },
+            key,
+            bytes,
+          ),
+        ]),
+      );
+    } catch {
+      throw new Error(
+        "The file could not be decrypted. It may be damaged or incomplete.",
+      );
+    }
+  }
+
+  return new Blob(parts, { type });
+};
 
 export const encryptText = async (
   key: CryptoKey,

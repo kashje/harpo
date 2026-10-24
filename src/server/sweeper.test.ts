@@ -3,7 +3,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 
 import { env } from "@/env";
-import { getCaller } from "@/test/trpc";
+import { postDownload, readDownload, uploadTestFile } from "@/test/files";
 import {
   expireSecret,
   findStoredSecret,
@@ -20,13 +20,8 @@ const storedFileExists = (idToken: string) =>
 
 describe("sweepOrphanedFiles", () => {
   it("deletes the files of expired secrets and keeps the rest", async () => {
-    const caller = await getCaller();
-    const expired = await caller.storage.upload(
-      (await makeFileSecretInput()).input,
-    );
-    const active = await caller.storage.upload(
-      (await makeFileSecretInput()).input,
-    );
+    const expired = await uploadTestFile((await makeFileSecretInput()).input);
+    const active = await uploadTestFile((await makeFileSecretInput()).input);
     await expireSecret(expired.idToken);
 
     expect(await sweepOrphanedFiles()).toBe(1);
@@ -36,9 +31,23 @@ describe("sweepOrphanedFiles", () => {
     expect(await findStoredSecret(active.idToken)).not.toBeNull();
   });
 
+  it("keeps the file of an expired secret while it's being downloaded", async () => {
+    const { idToken } = await uploadTestFile(
+      (await makeFileSecretInput("data", { maxViews: "5" })).input,
+    );
+    const download = await postDownload({ idToken });
+    await expireSecret(idToken);
+
+    expect(await sweepOrphanedFiles()).toBe(0);
+    expect(storedFileExists(idToken)).toBe(true);
+
+    // Once the download is done the file goes, even before the next sweep.
+    await readDownload(download);
+    await vi.waitFor(() => expect(storedFileExists(idToken)).toBe(false));
+  });
+
   it("deletes every file once Redis has lost its data", async () => {
-    const caller = await getCaller();
-    const { idToken } = await caller.storage.upload(
+    const { idToken } = await uploadTestFile(
       (await makeFileSecretInput()).input,
     );
     await getRedis().flushall();
@@ -48,8 +57,7 @@ describe("sweepOrphanedFiles", () => {
   });
 
   it("keeps every file when Redis can't tell which secrets exist", async () => {
-    const caller = await getCaller();
-    const { idToken } = await caller.storage.upload(
+    const { idToken } = await uploadTestFile(
       (await makeFileSecretInput()).input,
     );
     const redis = getRedis();

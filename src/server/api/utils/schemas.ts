@@ -54,3 +54,15 @@ export const lifetimeSchema = z.object({
   expiresIn: z.enum(EXPIRES_IN_VALUES),
   maxViews: z.enum(MAX_VIEWS_VALUES),
 });
+
+/** Everything about a new file secret except the file, which is the request body. */
+export const fileUploadMetadataSchema = lifetimeSchema.extend({
+  iv: ivSchema,
+  meta: metaSchema,
+  passphrase: passphraseSchema.optional(),
+});
+
+export const fileDownloadSchema = z.object({
+  idToken: idTokenSchema,
+  authToken: authTokenSchema.optional(),
+});

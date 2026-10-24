@@ -48,5 +48,15 @@ export const PASSPHRASE_SALT_BYTES = 16;
 export const AUTH_TOKEN_BYTES = 32;
 export const DELETE_TOKEN_BYTES = 32;
 
+/** Files are encrypted in chunks of this size, so the browser never holds a whole file at once. */
+export const FILE_CHUNK_BYTES = 1024 * 1024;
+
+/**
+ * Size of a file of `bytes` bytes once encrypted: every chunk gets an AES-GCM tag, and even an empty
+ * file is one (empty) chunk.
+ */
+export const encryptedFileSize = (bytes: number) =>
+  bytes + AES_GCM_TAG_BYTES * Math.max(1, Math.ceil(bytes / FILE_CHUNK_BYTES));
+
 /** Length of the unpadded base64url encoding of `bytes` bytes. */
 export const base64urlLength = (bytes: number) => Math.ceil((bytes * 4) / 3);

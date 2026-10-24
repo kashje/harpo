@@ -1,7 +1,7 @@
 import {
   base64urlEncode,
   deriveSecretKeys,
-  encryptBytes,
+  encryptFile,
   encryptMeta,
   encryptText,
   generateLinkKey,
@@ -75,17 +75,16 @@ export async function makeFileSecretInput(
     meta: { fileName: "test-file.txt", mimeType: "text/plain" },
     ...options,
   });
-  const { ciphertext, iv } = await encryptBytes(
+  const { ciphertext, iv } = await encryptFile(
     keys.contentKey,
-    new TextEncoder().encode(content),
+    new Blob([content]),
   );
   return {
     linkKey,
     keys,
     input: {
-      ...common,
-      encryptedBytes: base64urlEncode(ciphertext),
-      iv: base64urlEncode(iv),
+      metadata: { ...common, iv: base64urlEncode(iv) },
+      ciphertext,
     },
   };
 }
