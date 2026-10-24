@@ -53,7 +53,7 @@ Only commits that affect the release (e.g. `feat:`, `fix:`) will trigger a new v
 
 Tests use [Vitest](https://vitest.dev). Run all tests with `pnpm test` or `pnpm test:run`.
 
-Tests don't need any running services: Redis is replaced by an in-memory mock ([ioredis-mock](https://github.com/stipsan/ioredis-mock)) in `vitest.setup.ts`, and files go to a temporary directory. They do need a valid `.env.test` (see `.env.test.example`). **If `.env.test` is missing or incomplete, tests will fail.**
+Tests don't need any running services: Redis is replaced by an in-memory mock ([ioredis-mock](https://github.com/stipsan/ioredis-mock)) in `vitest.setup.ts`, and files go to a temporary directory. The S3 adapter is tested against an in-memory bucket ([aws-sdk-client-mock](https://github.com/m-radzikowski/aws-sdk-client-mock), see `src/test/fakeS3.ts`). They do need a valid `.env.test` (see `.env.test.example`). **If `.env.test` is missing or incomplete, tests will fail.**
 
 1. Copy the example env and set the required secrets:
    ```bash
