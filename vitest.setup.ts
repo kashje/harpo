@@ -5,6 +5,9 @@ import { afterAll, beforeEach, vi } from "vitest";
 
 process.loadEnvFile(".env.test");
 
+// Without a storage adapter file sharing is off; the tests store files on disk.
+process.env.STORAGE_ADAPTER ??= "local";
+
 // Every test file gets its own storage directory: test files run in parallel, and the sweeper
 // deletes files whose secret its own in-memory Redis doesn't know.
 const storageBasePath = join(

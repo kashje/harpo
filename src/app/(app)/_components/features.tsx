@@ -27,6 +27,7 @@ const features = [
     title: "Encrypted file sharing",
     description:
       "Files are encrypted in your browser and stored as ciphertext. File names are encrypted too.",
+    needsFiles: true,
   },
   {
     icon: Fingerprint,
@@ -42,7 +43,11 @@ const features = [
   },
 ];
 
-export function Features() {
+export function Features({ filesEnabled }: { filesEnabled: boolean }) {
+  const shown = features.filter(
+    (feature) => filesEnabled || !feature.needsFiles,
+  );
+
   return (
     <section className="relative py-24">
       <div className="mb-8 text-center">
@@ -59,7 +64,7 @@ export function Features() {
       </div>
 
       <div className="mx-auto grid max-w-6xl gap-5 md:grid-cols-2 lg:grid-cols-3">
-        {features.map((feature, index) => (
+        {shown.map((feature, index) => (
           <div
             key={feature.title}
             className="group hover:from-primary/10 hover:to-primary/5 hover:border-primary/50 relative rounded-2xl border p-6 transition-all duration-300 hover:bg-gradient-to-br hover:shadow-xl"

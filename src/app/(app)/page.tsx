@@ -1,4 +1,5 @@
 import { env } from "@/env";
+import { isStorageEnabled } from "@/server/storage";
 import { HydrateClient } from "@/trpc/server";
 import { SecretForm } from "./_components/secret-form";
 import { TrustBadges } from "./_components/trust-badges";
@@ -6,6 +7,8 @@ import { Features } from "./_components/features";
 import { HowItWorks } from "./_components/how-it-works";
 
 export default function AppPage() {
+  const filesEnabled = isStorageEnabled();
+
   return (
     <HydrateClient>
       {/* Hero Section */}
@@ -38,7 +41,10 @@ export default function AppPage() {
               </div>
 
               <div className="w-full flex-1 pb-20 lg:max-w-lg lg:pb-0">
-                <SecretForm maxUploadBytes={env.MAX_UPLOAD_SIZE_BYTES} />
+                <SecretForm
+                  filesEnabled={filesEnabled}
+                  maxUploadBytes={env.MAX_UPLOAD_SIZE_BYTES}
+                />
               </div>
             </div>
           </div>
@@ -50,7 +56,7 @@ export default function AppPage() {
       </section>
 
       <section id="features" className="container mx-auto px-4">
-        <Features />
+        <Features filesEnabled={filesEnabled} />
       </section>
     </HydrateClient>
   );

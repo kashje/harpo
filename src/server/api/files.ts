@@ -19,7 +19,7 @@ import {
   createSecret,
   renewDownloadLease,
 } from "@/server/secretStore";
-import { getStorageAdapter } from "@/server/storage";
+import { getStorageAdapter, isStorageEnabled } from "@/server/storage";
 import {
   checkCreateRateLimit,
   checkGlobalRateLimit,
@@ -70,6 +70,15 @@ async function respond(handler: () => Promise<Response>): Promise<Response> {
       { message: error.message },
       { status: getHTTPStatusCodeFromError(error) },
     );
+  }
+}
+
+function assertStorageEnabled() {
+  if (!isStorageEnabled()) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "File sharing is disabled on this server",
+    });
   }
 }
 
@@ -136,6 +145,7 @@ async function readJsonBody(req: Request): Promise<unknown> {
  */
 export const uploadFile = (req: Request) =>
   respond(async () => {
+    assertStorageEnabled();
     const clientIp = getClientIp(req.headers);
     await checkGlobalRateLimit(clientIp);
     await checkCreateRateLimit(clientIp);
@@ -205,6 +215,7 @@ export const uploadFile = (req: Request) =>
  */
 export const downloadFile = (req: Request) =>
   respond(async () => {
+    assertStorageEnabled();
     await checkGlobalRateLimit(getClientIp(req.headers));
 
     const input = parseInput(fileDownloadSchema, await readJsonBody(req));

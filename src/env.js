@@ -23,7 +23,9 @@ export const env = createEnv({
     CREATE_RATE_LIMIT_AMOUNT: z.coerce.number().int().positive().default(30),
     CREATE_RATE_LIMIT_TIME: z.coerce.number().int().positive().default(600),
     TRUSTED_PROXY_COUNT: z.coerce.number().int().min(0).default(1),
-    STORAGE_ADAPTER: z.enum(["local", "s3"]).default("local"),
+    // File uploads are off when DISABLE_STORAGE is true or no STORAGE_ADAPTER is set.
+    DISABLE_STORAGE: z.stringbool().default(false),
+    STORAGE_ADAPTER: z.enum(["local", "s3"]).optional(),
     STORAGE_BASE_PATH: z.string().default("/tmp/harpo-storage"),
     // Only used with STORAGE_ADAPTER=s3; S3_BUCKET is required then (checked in src/server/storage).
     S3_BUCKET: z.string().optional(),
@@ -61,6 +63,7 @@ export const env = createEnv({
     CREATE_RATE_LIMIT_AMOUNT: process.env.CREATE_RATE_LIMIT_AMOUNT,
     CREATE_RATE_LIMIT_TIME: process.env.CREATE_RATE_LIMIT_TIME,
     TRUSTED_PROXY_COUNT: process.env.TRUSTED_PROXY_COUNT,
+    DISABLE_STORAGE: process.env.DISABLE_STORAGE,
     STORAGE_ADAPTER: process.env.STORAGE_ADAPTER,
     STORAGE_BASE_PATH: process.env.STORAGE_BASE_PATH,
     S3_BUCKET: process.env.S3_BUCKET,

@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { z } from "zod";
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ import {
   EyeOff,
   FileText,
   FileUp,
+  FileX,
   Lock,
   MessageSquareText,
   Sparkles,
@@ -89,7 +91,14 @@ const formSchema = z
 
 type SecretFormValues = z.infer<typeof formSchema>;
 
-export function SecretForm({ maxUploadBytes }: { maxUploadBytes: number }) {
+export function SecretForm({
+  filesEnabled,
+  maxUploadBytes,
+}: {
+  /** Whether the server stores files. Without, only text secrets can be created. */
+  filesEnabled: boolean;
+  maxUploadBytes: number;
+}) {
   const [activeTab, setActiveTab] = useState<TabType>("text");
   const [usePassphrase, setUsePassphrase] = useState(false);
   const [showPassphrase, setShowPassphrase] = useState(false);
@@ -125,7 +134,7 @@ export function SecretForm({ maxUploadBytes }: { maxUploadBytes: number }) {
   const isSubmitDisabled =
     form.formState.isSubmitting ||
     (mode === "text" && !secret?.trim()) ||
-    (mode === "file" && (!files || files.length === 0));
+    (mode === "file" && (!filesEnabled || !files || files.length === 0));
 
   const onSubmit = async (values: SecretFormValues) => {
     if (usePassphrase && !values.passphrase) {
@@ -244,7 +253,6 @@ export function SecretForm({ maxUploadBytes }: { maxUploadBytes: number }) {
             <MessageSquareText className="h-4 w-4" />
             Text <span className="hidden md:inline">Secret</span>
           </button>
-          {/* File upload is disabled for now */}
           <button
             type="button"
             onClick={() => {
@@ -307,8 +315,19 @@ export function SecretForm({ maxUploadBytes }: { maxUploadBytes: number }) {
             />
           )}
 
+          {activeTab === "file" && !filesEnabled && (
+            <Alert>
+              <FileX />
+              <AlertTitle>File sharing is disabled</AlertTitle>
+              <AlertDescription>
+                This server doesn&apos;t accept file uploads. You can still
+                share text secrets.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* File Upload */}
-          {activeTab === "file" && (
+          {activeTab === "file" && filesEnabled && (
             <Controller
               control={form.control}
               name="files"

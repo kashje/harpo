@@ -56,4 +56,38 @@ describe("getStorageAdapter", () => {
     });
     expect(() => getStorageAdapter()).toThrow("S3_ACCESS_KEY_ID");
   });
+
+  it("throws when storage is disabled", async () => {
+    const { getStorageAdapter } = await loadStorage({
+      ...s3Vars,
+      DISABLE_STORAGE: "true",
+    });
+    expect(() => getStorageAdapter()).toThrow("File storage is disabled");
+  });
+});
+
+describe("isStorageEnabled", () => {
+  it("is on with a storage adapter", async () => {
+    const { isStorageEnabled } = await loadStorage({
+      STORAGE_ADAPTER: "local",
+      DISABLE_STORAGE: undefined,
+    });
+    expect(isStorageEnabled()).toBe(true);
+  });
+
+  it("is off without a storage adapter", async () => {
+    const { isStorageEnabled } = await loadStorage({
+      STORAGE_ADAPTER: undefined,
+      DISABLE_STORAGE: undefined,
+    });
+    expect(isStorageEnabled()).toBe(false);
+  });
+
+  it("is off with DISABLE_STORAGE=true, even with a storage adapter", async () => {
+    const { isStorageEnabled } = await loadStorage({
+      STORAGE_ADAPTER: "local",
+      DISABLE_STORAGE: "true",
+    });
+    expect(isStorageEnabled()).toBe(false);
+  });
 });
