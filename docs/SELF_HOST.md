@@ -58,8 +58,9 @@ docker run -it --rm --name harpo -p 3000:3000 \
    | `REDIS_PASSWORD`        | Redis password                                     | required in prod   |
    | `REDIS_VERSION`         | Redis image tag                                    | 7                  |
    | `REDIS_PORT`            | Redis host port (dev)                              | 6379               |
-   | `STORAGE_ADAPTER`       | `local` or `s3`, see [File storage](#file-storage) | local              |
+   | `STORAGE_ADAPTER`       | `local` or `s3`, see [File storage](#file-storage) | unset (no files)   |
    | `STORAGE_BASE_PATH`     | Storage base path                                  | /tmp/harpo-storage |
+   | `DISABLE_STORAGE`       | `true` turns off file sharing                      | false              |
    | `MAX_UPLOAD_SIZE_BYTES` | Maximum upload size in bytes                       | 104857600          |
 
 2. **Start the stack** (app + Redis):
@@ -101,6 +102,12 @@ If you bring your own Redis:
 Files are encrypted in the browser in chunks of 1 MB and streamed through Harpo to storage; downloads are streamed back and decrypted chunk by chunk as they arrive. Neither the server nor the browser's JavaScript holds a whole file in memory. The browser collects the encrypted or decrypted file as a Blob, which browsers such as Chrome move to disk once it gets large, so how much memory a large file takes depends on the browser. Keep `MAX_UPLOAD_SIZE_BYTES` at a size your users can handle.
 
 Harpo stores files on the local disk (`STORAGE_ADAPTER=local`, under `STORAGE_BASE_PATH`) or in an S3 bucket (`STORAGE_ADAPTER=s3`).
+
+### Text only
+
+File sharing is off when `STORAGE_ADAPTER` isn't set, or when `DISABLE_STORAGE=true` (which wins over `STORAGE_ADAPTER`). Harpo then only shares text secrets: the form says file sharing is disabled, uploads are refused, and the sweeper doesn't run.
+
+When you turn storage off on an installation that already has file secrets, their links still open but can't be downloaded, and nothing deletes their files anymore. Remove `STORAGE_BASE_PATH` (or the bucket's `S3_PREFIX`) yourself once you no longer need them.
 
 ### S3
 
