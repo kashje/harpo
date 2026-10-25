@@ -1,3 +1,10 @@
+# [1.1.0-next.6](https://github.com/kashje/harpo/compare/v1.1.0-next.5...v1.1.0-next.6) (2026-10-25)
+
+
+### Features
+
+* allow turning off file sharing ([72c81c1](https://github.com/kashje/harpo/commit/72c81c156404d1f6b5c8b406d01f0fdd24bf8d04))
+
 # [1.1.0-next.5](https://github.com/kashje/harpo/compare/v1.1.0-next.4...v1.1.0-next.5) (2026-10-24)
 
 
