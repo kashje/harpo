@@ -15,7 +15,7 @@ import {
   isFileDownloading,
   releaseDownloadLease,
 } from "@/server/secretStore";
-import { getStorageAdapter } from "@/server/storage";
+import { getStorageAdapter, isStorageEnabled } from "@/server/storage";
 
 export const SECRET_FILES_PREFIX = "secrets/";
 
@@ -29,8 +29,12 @@ const SECRET_FILE_PATH =
 export const secretIdFromFilePath = (path: string): string | null =>
   SECRET_FILE_PATH.exec(path)?.[1] ?? null;
 
-/** Deletes a secret's stored file. Failures are logged; the sweeper retries them later. */
+/**
+ * Deletes a secret's stored file. Failures are logged; the sweeper retries them later. With
+ * storage disabled, files from before stay where they are.
+ */
 export async function deleteSecretFile(id: string): Promise<void> {
+  if (!isStorageEnabled()) return;
   try {
     await getStorageAdapter().delete(secretFilePath(id));
   } catch (err) {

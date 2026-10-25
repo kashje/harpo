@@ -86,9 +86,12 @@ function saveFile(file: Blob, meta: SecretMeta | null) {
 export function SharedSecret({
   secret,
   idToken,
+  filesEnabled,
 }: {
   secret: NonNullable<Secret>;
   idToken: string;
+  /** Whether this server stores files. Without, a file secret can't be downloaded. */
+  filesEnabled: boolean;
 }) {
   const reveal = api.secret.reveal.useMutation();
 
@@ -113,6 +116,7 @@ export function SharedSecret({
   const [isDownloading, setIsDownloading] = useState(false);
 
   const isFile = secret.type === "file";
+  const fileUnavailable = isFile && !filesEnabled;
   const needsPassphrase = secret.passphrase !== null;
   const isBusy = reveal.isPending || isDownloading;
   const isLastView =
@@ -234,7 +238,8 @@ export function SharedSecret({
 
   const title =
     meta?.name ?? meta?.fileName ?? (isFile ? "Shared file" : "Shared secret");
-  const canAct = !keyError && !!linkKey && !!metaForKey && !destroyed;
+  const canAct =
+    !keyError && !!linkKey && !!metaForKey && !destroyed && !fileUnavailable;
   const revealed = revealedText !== null;
 
   return (
@@ -268,6 +273,16 @@ export function SharedSecret({
           </Alert>
         )}
 
+        {fileUnavailable && (
+          <Alert className="border-amber-500/30 bg-amber-500/30 text-amber-500">
+            <AlertTitle>File sharing is disabled</AlertTitle>
+            <AlertDescription className="text-amber-500/80">
+              This server no longer stores files, so this file can&apos;t be
+              downloaded.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {destroyed && (
           <Alert className="border-amber-500/30 bg-amber-500/30 text-amber-500">
             <AlertTitle>Secret destroyed</AlertTitle>
@@ -278,7 +293,7 @@ export function SharedSecret({
           </Alert>
         )}
 
-        {!destroyed && !revealed && isLastView && (
+        {!destroyed && !revealed && !fileUnavailable && isLastView && (
           <Alert className="border-amber-500/30 bg-amber-500/30 text-amber-500">
             <AlertTitle>Last view</AlertTitle>
             <AlertDescription className="text-amber-500/80">
@@ -288,16 +303,20 @@ export function SharedSecret({
           </Alert>
         )}
 
-        {!destroyed && !revealed && !isLastView && views.maxViews > 1 && (
-          <Alert>
-            <AlertTitle>Views are limited</AlertTitle>
-            <AlertDescription>
-              {isFile
-                ? "Every download counts as a view."
-                : "Revealing or copying the secret counts as one view."}
-            </AlertDescription>
-          </Alert>
-        )}
+        {!destroyed &&
+          !revealed &&
+          !fileUnavailable &&
+          !isLastView &&
+          views.maxViews > 1 && (
+            <Alert>
+              <AlertTitle>Views are limited</AlertTitle>
+              <AlertDescription>
+                {isFile
+                  ? "Every download counts as a view."
+                  : "Revealing or copying the secret counts as one view."}
+              </AlertDescription>
+            </Alert>
+          )}
 
         {needsPassphrase && !revealed && !destroyed && (
           <Field>

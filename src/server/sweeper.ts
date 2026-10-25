@@ -1,5 +1,5 @@
 import { fileIdsInUse } from "@/server/secretStore";
-import { getStorageAdapter } from "@/server/storage";
+import { getStorageAdapter, isStorageEnabled } from "@/server/storage";
 import {
   SECRET_FILES_PREFIX,
   deleteSecretFile,
@@ -32,8 +32,9 @@ const globalForSweeper = globalThis as unknown as {
   secretSweeper: NodeJS.Timeout | undefined;
 };
 
+/** Sweeps every `intervalMs`. Without storage there are no files to sweep, so it doesn't start. */
 export function startSecretSweeper(intervalMs = SWEEP_INTERVAL_MS) {
-  if (globalForSweeper.secretSweeper) return;
+  if (globalForSweeper.secretSweeper || !isStorageEnabled()) return;
 
   const sweep = () => {
     sweepOrphanedFiles()

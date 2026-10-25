@@ -49,18 +49,26 @@ const globalForStorage = globalThis as unknown as {
   storageAdapter: StorageAdapter | undefined;
 };
 
-/** The configured storage adapter, created on first use. */
+/** File secrets need storage. It's off with DISABLE_STORAGE=true, or when no STORAGE_ADAPTER is set. */
+export const isStorageEnabled = (): boolean =>
+  !env.DISABLE_STORAGE && env.STORAGE_ADAPTER !== undefined;
+
+/** The configured storage adapter, created on first use. Throws when storage is disabled. */
 export function getStorageAdapter(): StorageAdapter {
   if (globalForStorage.storageAdapter) return globalForStorage.storageAdapter;
 
   const driver = env.STORAGE_ADAPTER;
+
+  if (!isStorageEnabled() || !driver) {
+    throw new StorageAdapterError("File storage is disabled");
+  }
 
   const factories: Record<Adapter, () => StorageAdapter> = {
     local: () => new LocalStorageAdapter(env.STORAGE_BASE_PATH),
     s3: createS3StorageAdapter,
   };
 
-  const factory = factories[driver as Adapter];
+  const factory = factories[driver];
 
   if (!factory) {
     throw new StorageAdapterError(`Unsupported Storage driver: ${driver}`);

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { isStorageEnabled } from "@/server/storage";
 import { api } from "@/trpc/server";
 import { SharedSecret } from "./_components/shared-secret";
 
@@ -17,7 +18,11 @@ export default async function SharedSecretPage({
     <section className="pt-28 pb-20 md:pt-32">
       <div className="container mx-auto px-4">
         <div className="mx-auto max-w-2xl">
-          <SharedSecret secret={secret} idToken={id} />
+          <SharedSecret
+            secret={secret}
+            idToken={id}
+            filesEnabled={isStorageEnabled()}
+          />
         </div>
       </div>
     </section>
